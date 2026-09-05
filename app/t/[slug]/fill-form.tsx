@@ -21,7 +21,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import PaintCalendar from "@/components/paint-calendar";
-import { joinTripAction, saveAvailabilityAction, setAvatarAction } from "@/app/actions";
+import {
+  claimExistingParticipantAction,
+  joinTripAction,
+  saveAvailabilityAction,
+  setAvatarAction,
+} from "@/app/actions";
 import { formatRange, formatShort } from "@/lib/dates";
 import { MAX_COMMENT_LENGTH } from "@/lib/store";
 import type { AvailState, TripStatus } from "@/lib/types";
@@ -212,8 +217,9 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
   const [error, setError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   /** ชื่อที่ตอบไปแล้วซึ่งถูกแตะ — ต้องยืนยันก่อน กันสร้างชื่อซ้ำโดยไม่รู้ตัว */
-  const [confirmName, setConfirmName] = useState<string | null>(null);
   const [typedName, setTypedName] = useState("");
+  /** ดูปฏิทินรวมได้แม้ยังไม่เคลมตัวตน — ไม่ต้องรู้ว่าเป็นใครก็ดูได้ (ไม่ใช่ความลับ) */
+  const [showCalendar, setShowCalendar] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const slug = trip.slug;
@@ -311,7 +317,9 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
       const days = daysOf(trip, rec.participantId);
       setValue(days);
       setSavedDays(days);
-      setConfirmName(null);
+      const c = commentOf(trip, rec.participantId);
+      setComment(c);
+      setSavedComment(c);
       setTypedName("");
       setError(null);
     },
@@ -333,6 +341,25 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
           return;
         }
         adopt({ token: res.data.token, participantId: res.data.participantId, name: trimmed });
+      });
+    },
+    [slug, adopt],
+  );
+
+  /**
+   * แตะชื่อที่ "ตอบแล้ว" จากลิงก์กลุ่ม (ไม่ใช่ลิงก์ส่วนตัว) → กลับไปแก้คำตอบเดิมได้ทันที
+   * ไม่มีการยืนยันเพิ่ม (เลือกความง่ายเหนือกันชื่อปลอม — ใช้ในกลุ่มเพื่อนที่รู้จักกันอยู่แล้ว)
+   */
+  const reclaim = useCallback(
+    (participantId: string) => {
+      setError(null);
+      startTransition(async () => {
+        const res = await claimExistingParticipantAction(slug, participantId);
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
+        adopt({ token: res.data.token, participantId: res.data.participantId, name: res.data.name });
       });
     },
     [slug, adopt],
@@ -459,46 +486,34 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
       <main className={SHELL}>
         {header}
 
-        <section className="pb-10">
+        {/* ดูปฏิทินรวมได้เลยแม้ยังไม่เคลมตัวตน — ใครเลือกวันไหนไม่ใช่ความลับ */}
+        <button
+          type="button"
+          onClick={() => setShowCalendar((v) => !v)}
+          className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[16px] bg-fill px-4 font-display font-semibold text-[14px] text-ink-2"
+        >
+          {showCalendar ? "ซ่อนปฏิทิน" : "ดูปฏิทินความว่างทั้งหมด"}
+        </button>
+        {showCalendar && (
+          <div className="pt-3">
+            <p className="pb-2 text-[0.78rem] text-ink-3">
+              ตัวเลขในช่อง = ว่างกี่คนจากทั้งหมด · แตะช่องไหนดูรายชื่อของวันนั้น
+            </p>
+            <DayStatusCalendar
+              rangeStart={trip.rangeStart}
+              rangeEnd={trip.rangeEnd}
+              participants={trip.participants}
+            />
+          </div>
+        )}
+
+        <section className="pt-6 pb-10">
           <h2 className="font-display font-bold text-[19px] text-ink">คุณคือใคร</h2>
           <p className="pt-1 pb-4 text-[14px] text-ink-2">
             แตะชื่อตัวเองเพื่อเริ่มกรอกวันว่าง ไม่ต้องสมัครสมาชิก
           </p>
 
           {errorBox}
-
-          {/* ยืนยันก่อนเคลมชื่อที่ตอบไปแล้ว — ถ้าเดินหน้าต่อจะได้ชื่อใหม่ ไม่ใช่ของเดิม */}
-          {confirmName !== null && (
-            <div className="mt-3 rounded-[16px] bg-sun-fill px-4 py-4 text-[14px] text-sun-ink">
-              <p className="font-display font-semibold">“{confirmName}” ตอบไปแล้ว</p>
-              <p className="pt-1 leading-relaxed">
-                ถ้านี่คือคุณ ให้เปิดจาก{" "}
-                <strong>ลิงก์ส่วนตัวเดิม</strong> หรือเครื่องที่เคยกรอก คำตอบเดิมจะถูกแก้ได้ตรง ๆ
-                {trip.allowSelfJoin
-                  ? " — ถ้าคุณเป็นคนละคนที่ชื่อพ้องกัน กดต่อได้เลย ระบบจะสร้างชื่อใหม่ให้แยกจากคนเดิม"
-                  : " — ถ้าคุณเป็นคนละคนที่ชื่อพ้องกัน ทักเจ้าภาพให้เพิ่มชื่อคุณเข้าไป"}
-              </p>
-              <div className="flex flex-wrap gap-2 pt-3">
-                {trip.allowSelfJoin && (
-                  <button
-                    type="button"
-                    disabled={pending}
-                    onClick={() => claim(confirmName)}
-                    className="min-h-[44px] rounded-full bg-brand px-5 font-display font-semibold text-[14px] text-on-brand disabled:opacity-60"
-                  >
-                    {pending ? "กำลังเข้าร่วม…" : "ฉันเป็นคนละคน กดต่อ"}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setConfirmName(null)}
-                  className="min-h-[44px] rounded-full bg-fill px-5 text-[14px] text-ink-2"
-                >
-                  ยกเลิก
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* ทริปที่ไม่เปิดให้เพิ่มชื่อเอง: ยืนยันตัวได้ทางลิงก์ส่วนตัวทางเดียว
               จึงไม่ทำปุ่มให้กด เพราะกดไปก็ถูกเซิร์ฟเวอร์ปฏิเสธทุกครั้ง */}
@@ -553,25 +568,33 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
                 </ul>
               )}
 
-              {/* คนที่ตอบแล้ว — จาง ๆ แตะได้ แต่ต้องยืนยันก่อน */}
+              {/* คนที่ตอบแล้ว — แตะเพื่อกลับไปดู/แก้คำตอบเดิมได้เลย ไม่ต้องมีลิงก์ส่วนตัว
+                  (เจ้าของแอปเลือกความง่ายเหนือกันชื่อปลอม — ใช้ในกลุ่มเพื่อนที่รู้จักกันอยู่แล้ว) */}
               {answered.length > 0 && (
                 <div className="pt-4">
-                  <p className="pb-2 text-[13px] text-ink-3">ตอบแล้ว</p>
-                  <ul className="flex flex-wrap gap-2">
+                  <p className="pb-2 text-[13px] text-ink-3">ตอบแล้ว — แตะชื่อเพื่อดู/แก้คำตอบ</p>
+                  <ul className="grid gap-2">
                     {answered.map((p) => (
                       <li key={p.id}>
                         <button
                           type="button"
                           disabled={pending}
-                          onClick={() => setConfirmName(p.name)}
-                          className="flex min-h-[44px] items-center gap-2 rounded-full bg-fill py-1 pl-1 pr-4 text-[14px] text-ink-3 disabled:opacity-60"
+                          onClick={() => reclaim(p.id)}
+                          className="flex min-h-[56px] w-full items-center gap-3 rounded-[16px] bg-fill px-4 text-left disabled:opacity-60"
                         >
-                          <Avatar name={p.name} avatarKey={p.avatarKey} size={32} className="opacity-90" />
-                          <span>{p.name}</span>
-                          {/* "ตอบแล้ว" ไม่ใช่สถานะว่าง จึงใช้ brand แทนมิ้นต์ */}
-                          <span className="rounded-full bg-brand-fill px-2 py-0.5 text-[11px] text-brand-ink">
-                            ตอบแล้ว
+                          <Avatar name={p.name} avatarKey={p.avatarKey} size={40} className="opacity-90" />
+                          <span className="flex-1 font-display font-semibold text-[17px] text-ink">
+                            {p.name}
                           </span>
+                          <span className="shrink-0 text-[13px] text-ink-3">ตอบแล้ว · แก้ไข →</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => claim(p.name)}
+                          className="mt-1 ml-2 text-[12px] text-ink-3 underline decoration-ink-3/40"
+                        >
+                          ไม่ใช่ฉัน — เป็นคนละคนที่ชื่อพ้องกัน
                         </button>
                       </li>
                     ))}

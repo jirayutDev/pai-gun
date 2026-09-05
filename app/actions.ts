@@ -345,6 +345,37 @@ export async function joinTripAction(
 }
 
 /* ------------------------------------------------------------------ *
+ * กลับไปแก้คำตอบเดิมจากลิงก์กลุ่ม (ไม่ใช่ลิงก์ส่วนตัว)
+ * ------------------------------------------------------------------ */
+
+/**
+ * แตะชื่อที่ "ตอบแล้ว" ในหน้าเลือกตัวตน → คืน token ของคนนั้นให้เลยไม่ต้องยืนยันอะไรเพิ่ม
+ *
+ * ⚠️ ตั้งใจไม่เช็กว่าใครเป็นคนกด — ทริปนี้ใช้ในกลุ่มเพื่อนที่รู้จักกันอยู่แล้ว
+ * เจ้าของแอปเลือกความง่ายในการกลับมาแก้ไข (แม้เปิดจากเบราว์เซอร์/เครื่องอื่นก็แก้ได้)
+ * เหนือการกันชื่อปลอม ถ้าอยากกันสวมรอยจริงจังต้องกลับไปใช้ลิงก์ส่วนตัวเท่านั้น
+ */
+export async function claimExistingParticipantAction(
+  slug: string,
+  participantId: string,
+): Promise<ActionResult<{ token: string; participantId: string; name: string }>> {
+  try {
+    const trip = await getTrip(slug);
+    if (trip === null) {
+      throw new InputError("ไม่พบทริปนี้ — ลิงก์อาจผิดหรือทริปถูกลบไปแล้ว");
+    }
+    const id = typeof participantId === "string" ? participantId : "";
+    const target = trip.participants.find((p) => p.id === id);
+    if (target === undefined) {
+      throw new InputError("ไม่พบคนนี้ในทริป — อาจถูกลบไปแล้ว ลองรีเฟรชหน้า");
+    }
+    return ok({ token: target.token, participantId: target.id, name: target.name });
+  } catch (err) {
+    return fail(toUserError(err, "เปิดคำตอบเดิมไม่สำเร็จเพราะระบบมีปัญหา — ลองอีกครั้ง"));
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * บันทึกวันว่าง
  * ------------------------------------------------------------------ */
 
