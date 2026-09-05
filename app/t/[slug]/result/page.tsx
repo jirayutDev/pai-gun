@@ -50,6 +50,7 @@ export default async function ResultPage({ params }: PageProps) {
       name: p.name,
       isKey: p.isKey,
       avatarKey: p.avatarKey,
+      comment: p.comment,
       days: p.days,
       rsvp: p.rsvp,
       plusOnes: p.plusOnes,

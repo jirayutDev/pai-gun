@@ -23,9 +23,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import PaintCalendar from "@/components/paint-calendar";
 import { joinTripAction, saveAvailabilityAction, setAvatarAction } from "@/app/actions";
 import { formatRange, formatShort } from "@/lib/dates";
+import { MAX_COMMENT_LENGTH } from "@/lib/store";
 import type { AvailState, TripStatus } from "@/lib/types";
 import Avatar, { type AvatarKey } from "@/components/ui/avatar";
 import AvatarPicker from "@/components/ui/avatar-picker";
+import DayStatusCalendar from "@/components/ui/day-status-calendar";
 import { FloatingBar } from "@/components/ui/floating-bar";
 import { FloatingDots } from "@/components/ui/floating-dots";
 import { Pill } from "@/components/ui/pill";
@@ -46,6 +48,8 @@ export interface PublicParticipant {
   isKey: boolean;
   /** key ใน AVATAR_FILES ที่เลือกเอง — null = ยังไม่เลือก (hash จากชื่อแทน) */
   avatarKey: string | null;
+  /** ความคิดเห็นสั้น ๆ ที่พิมพ์คู่กับวันว่าง — null = ไม่ได้เขียนไว้ */
+  comment: string | null;
   /** null = ยังไม่เคยกดบันทึก */
   submittedAt: string | null;
   days: Record<string, AvailState>;
@@ -172,6 +176,11 @@ function daysOf(trip: PublicTrip, participantId: string): Record<string, AvailSt
   return p === undefined ? {} : p.days;
 }
 
+function commentOf(trip: PublicTrip, participantId: string): string {
+  const p = trip.participants.find((x) => x.id === participantId);
+  return p?.comment ?? "";
+}
+
 const SHELL = "mx-auto w-full max-w-[30rem] md:max-w-[34rem] px-4";
 
 /* -------------------------------------------------------------------------- */
@@ -189,6 +198,15 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
   /** ชุดที่บันทึกไว้ล่าสุด ใช้บอกว่า "ยังไม่บันทึก" */
   const [savedDays, setSavedDays] = useState<Record<string, AvailState>>(() =>
     initialMe === null ? {} : daysOf(trip, initialMe.participantId),
+  );
+
+  /** ความคิดเห็นสั้น ๆ คู่กับวันว่าง เช่น "ว่างแค่เสาร์-อาทิตย์" — พิมพ์คู่กับปฏิทิน บันทึกพร้อมกัน */
+  const [comment, setComment] = useState<string>(() =>
+    initialMe === null ? "" : commentOf(trip, initialMe.participantId),
+  );
+  /** ความคิดเห็นที่บันทึกไว้ล่าสุด ใช้บอกว่า "ยังไม่บันทึก" คู่กับ savedDays */
+  const [savedComment, setSavedComment] = useState<string>(() =>
+    initialMe === null ? "" : commentOf(trip, initialMe.participantId),
   );
 
   const [error, setError] = useState<string | null>(null);
@@ -226,6 +244,9 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
       const days = daysOf(trip, rec.participantId);
       setValue(days);
       setSavedDays(days);
+      const savedC = commentOf(trip, rec.participantId);
+      setComment(savedC);
+      setSavedComment(savedC);
     }
     setChecked(true);
     // ตั้งใจให้รันครั้งเดียวตอน mount — ถ้าผูกกับ trip จะทับค่าที่ผู้ใช้กำลังกรอก
@@ -255,7 +276,7 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
     [value],
   );
   const filledCount = Object.keys(value).length;
-  const dirty = !sameDays(value, savedDays);
+  const dirty = !sameDays(value, savedDays) || comment !== savedComment;
 
   /** ชื่อจริงจากเซิร์ฟเวอร์มาก่อนชื่อที่พิมพ์ไว้ (เผื่อถูกต่อท้ายเป็น "(2)") */
   const myName =
@@ -337,16 +358,17 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
     const payload = value;
     setError(null);
     startTransition(async () => {
-      const res = await saveAvailabilityAction(slug, token, payload);
+      const res = await saveAvailabilityAction(slug, token, payload, comment);
       if (!res.ok) {
         // ห้ามล้าง value เด็ดขาด — คนกรอกมาทั้งเดือนแล้วหายคือเลิกใช้แอป
         setError(res.error);
         return;
       }
       setSavedDays(payload);
+      setSavedComment(comment);
       setJustSaved(true);
     });
-  }, [me, slug, value]);
+  }, [me, slug, value, comment]);
 
   /* ------------------------------------------------------------------ */
   /* ชิ้นส่วนที่ใช้ซ้ำ                                                   */
@@ -651,6 +673,37 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
           onChange={setValue}
           lengthDays={trip.lengthDays}
           disabled={!polling}
+        />
+      </div>
+
+      {/* ความคิดเห็นสั้น ๆ คู่กับวันว่าง — บันทึกพร้อมกับปฏิทินตอนกดปุ่มเดียวกัน */}
+      <div className="pt-4">
+        <label htmlFor="comment" className="font-display font-semibold text-[0.9rem]">
+          ความคิดเห็น (ถ้ามี)
+        </label>
+        <textarea
+          id="comment"
+          value={comment}
+          onChange={(e) => setComment(e.target.value.slice(0, MAX_COMMENT_LENGTH))}
+          disabled={!polling}
+          rows={2}
+          maxLength={MAX_COMMENT_LENGTH}
+          placeholder="เช่น ว่างแค่เสาร์-อาทิตย์"
+          className="mt-2 w-full resize-none rounded-[16px] bg-fill px-4 py-3 text-[14px] text-ink placeholder:text-ink-3 disabled:opacity-50"
+        />
+      </div>
+
+      {/* ปฏิทินรวมของทุกคน — ก่อนหน้านี้เห็นได้แต่ในหน้าผลโหวตของเจ้าภาพเท่านั้น
+          คนที่มากรอกเองก็ควรเห็นได้ว่าคนอื่นเลือกวันไหนไปแล้วบ้างเหมือนกัน */}
+      <div className="pt-6">
+        <h2 className="font-display font-semibold text-[1rem] pb-1">ปฏิทินความว่างทั้งหมด</h2>
+        <p className="text-[0.78rem] text-ink-3 pb-3">
+          ตัวเลขในช่อง = ว่างกี่คนจากทั้งหมด · แตะช่องไหนดูรายชื่อของวันนั้น
+        </p>
+        <DayStatusCalendar
+          rangeStart={trip.rangeStart}
+          rangeEnd={trip.rangeEnd}
+          participants={trip.participants}
         />
       </div>
 

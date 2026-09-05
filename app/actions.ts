@@ -27,6 +27,7 @@ import { addDays, daysBetween, eachDay, isISODate } from "@/lib/dates";
 import { makeId, makeToken } from "@/lib/ids";
 import {
   InputError,
+  MAX_COMMENT_LENGTH,
   MAX_LENGTH_DAYS,
   MAX_MEMBERS,
   MAX_NAME_LENGTH,
@@ -35,6 +36,7 @@ import {
   MAX_TITLE_LENGTH,
   createTrip,
   findParticipantByToken,
+  getTrip,
   nameKey,
   uniqueName,
   updateTrip,
@@ -319,6 +321,7 @@ export async function joinTripAction(
         // คนที่เข้ามาเองไม่ถือเป็นคนสำคัญโดยปริยาย — เจ้าภาพติ๊กให้ทีหลังได้
         isKey: false,
         avatarKey: null,
+        comment: null,
         days: {},
         rsvp: null,
         plusOnes: 0,
@@ -355,6 +358,7 @@ export async function saveAvailabilityAction(
   slug: string,
   token: string,
   days: Record<string, AvailState>,
+  comment: string,
 ): Promise<ActionResult<null>> {
   try {
     await updateTrip(slug, async (trip) => {
@@ -387,10 +391,18 @@ export async function saveAvailabilityAction(
         if (value === 0 || value === 1 || value === 2) clean[iso] = value;
       }
 
+      const trimmedComment = typeof comment === "string" ? comment.trim() : "";
+      if (trimmedComment.length > MAX_COMMENT_LENGTH) {
+        throw new InputError(
+          `ความคิดเห็นยาวเกิน ${MAX_COMMENT_LENGTH} ตัวอักษร — ย่อให้สั้นลง`,
+        );
+      }
+
       const now = new Date().toISOString();
       return replaceParticipant(trip, {
         ...me,
         days: clean,
+        comment: trimmedComment === "" ? null : trimmedComment,
         // ตั้งครั้งแรกที่กดบันทึกเท่านั้น — ค่านี้คือ "ตอบแล้ว" ไม่ใช่ "แก้ล่าสุด"
         submittedAt: me.submittedAt ?? now,
         updatedAt: now,
@@ -576,6 +588,43 @@ export async function removeParticipantAction(
     return ok(null);
   } catch (err) {
     return fail(toUserError(err, "ลบคนออกไม่สำเร็จเพราะระบบมีปัญหา — ลองกดอีกครั้ง"));
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * ลิงก์ส่วนตัวของคนหนึ่งในทริป (เจ้าภาพเท่านั้น)
+ * ------------------------------------------------------------------ */
+
+/**
+ * เจ้าภาพขอ token ของคนคนหนึ่งเพื่อคัดลอกลิงก์ส่วนตัวไปส่งซ้ำให้
+ * (เผื่อคนนั้นลิงก์เดิมหาย หรือเปลี่ยนเครื่อง/เบราว์เซอร์แล้ว localStorage ไม่มี)
+ *
+ * ⚠️ ต้องเช็ก assertOwner ก่อนคืน token เสมอ — token ของแต่ละคนคือกุญแจแก้ไข
+ * คำตอบแทนคนนั้นได้เลย ห้ามให้ใครนอกจากเจ้าภาพของทริปนี้เห็นเด็ดขาด และต้องคืน
+ * เฉพาะตอนถูกเรียกจริง (ไม่ใช่ฝังมากับข้อมูลทริปตั้งแต่โหลดหน้า) กันหลุดไปให้
+ * ผู้ชมทริปคนอื่นที่ไม่ใช่เจ้าภาพเห็นโดยไม่ตั้งใจ
+ */
+export async function getParticipantLinkAction(
+  slug: string,
+  participantId: string,
+): Promise<ActionResult<{ token: string }>> {
+  try {
+    const user = await getSessionUser();
+    const trip = await getTrip(slug);
+    if (trip === null) {
+      throw new InputError("ไม่พบทริปนี้ — ลิงก์อาจผิดหรือทริปถูกลบไปแล้ว");
+    }
+    assertOwner(trip, user?.id ?? null);
+
+    const id = typeof participantId === "string" ? participantId : "";
+    const target = trip.participants.find((p) => p.id === id);
+    if (target === undefined) {
+      throw new InputError("ไม่พบคนนี้ในทริป — อาจถูกลบไปแล้ว ลองรีเฟรชหน้า");
+    }
+
+    return ok({ token: target.token });
+  } catch (err) {
+    return fail(toUserError(err, "หาลิงก์ส่วนตัวไม่สำเร็จเพราะระบบมีปัญหา — ลองอีกครั้ง"));
   }
 }
 

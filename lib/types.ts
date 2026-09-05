@@ -46,6 +46,8 @@ export interface Participant {
   isKey: boolean;
   /** key ใน AVATAR_FILES ที่เลือกเอง — null = ยังไม่เลือก (คอมโพเนนต์ Avatar จะ hash จากชื่อแทน) */
   avatarKey: string | null;
+  /** ความคิดเห็นสั้น ๆ ที่พิมพ์คู่กับวันว่าง เช่น "ว่างแค่เสาร์-อาทิตย์" — null = ไม่ได้เขียนไว้ */
+  comment: string | null;
   /** "YYYY-MM-DD" -> AvailState — วันที่ไม่มีคีย์ถือว่ายังไม่ระบุ */
   days: Record<string, AvailState>;
   rsvp: Rsvp;

@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { cancelTripAction, editTripAction, lockDateAction } from "@/app/actions";
+import {
+  cancelTripAction,
+  editTripAction,
+  getParticipantLinkAction,
+  lockDateAction,
+} from "@/app/actions";
 import { formatDowRange, formatRange, isISODate } from "@/lib/dates";
 import { rankWindows } from "@/lib/schedule";
 import type { Participant, Trip, TripWindow } from "@/lib/types";
@@ -84,6 +89,51 @@ function CopyButton({
       } ${className}`}
     >
       {done ? "คัดลอกแล้ว" : label}
+    </button>
+  );
+}
+
+/**
+ * ปุ่มคัดลอกลิงก์ส่วนตัวของคนคนหนึ่ง — เจ้าภาพใช้ตอนคนนั้นลิงก์เดิมหาย
+ * ขอ token จากเซิร์ฟเวอร์ตอนกดเท่านั้น (ไม่ฝังมากับข้อมูลทริปตั้งแต่โหลดหน้า)
+ * กันหลุดไปให้ผู้ชมทริปคนอื่นที่ไม่ใช่เจ้าภาพเห็นโดยไม่ตั้งใจ
+ */
+function CopyPersonalLinkButton({
+  slug,
+  participantId,
+  shareUrl,
+}: {
+  slug: string;
+  participantId: string;
+  shareUrl: string;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => {
+        startTransition(async () => {
+          const res = await getParticipantLinkAction(slug, participantId);
+          if (!res.ok) {
+            toastError(res.error);
+            return;
+          }
+          const url = `${shareUrl}?t=${res.data.token}`;
+          if (await copy(url)) {
+            setDone(true);
+            window.setTimeout(() => setDone(false), 2000);
+          } else {
+            toastError("คัดลอกไม่สำเร็จ — เบราว์เซอร์นี้อาจไม่รองรับ");
+          }
+        });
+      }}
+      className={`shrink-0 min-h-[32px] px-3 rounded-full font-display font-semibold text-[0.72rem] disabled:opacity-60 ${
+        done ? "bg-mint text-ink-fixed" : "bg-fill text-ink-2"
+      }`}
+    >
+      {pending ? "…" : done ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}
     </button>
   );
 }
@@ -555,18 +605,28 @@ export default function ResultView({ trip, isOwner, shareUrl }: ResultViewProps)
           {trip.participants.map((p) => (
             <li
               key={p.id}
-              className="flex items-center gap-3 bg-surface border border-line rounded-[13px] px-3 py-2"
+              className="bg-surface border border-line rounded-[13px] px-3 py-2"
             >
-              <Avatar name={p.name} avatarKey={p.avatarKey} size={32} className="shrink-0" />
-              <span className="font-display font-semibold text-[0.9rem] flex-1 min-w-0 truncate">
-                {p.name}
-                {p.isKey ? (
-                  <span className="ml-2 font-mono text-[0.62rem] text-brand-ink">ขาดไม่ได้</span>
+              <div className="flex items-center gap-3">
+                <Avatar name={p.name} avatarKey={p.avatarKey} size={32} className="shrink-0" />
+                <span className="font-display font-semibold text-[0.9rem] flex-1 min-w-0 truncate">
+                  {p.name}
+                  {p.isKey ? (
+                    <span className="ml-2 font-mono text-[0.62rem] text-brand-ink">ขาดไม่ได้</span>
+                  ) : null}
+                </span>
+                <Pill tone={p.submittedAt ? "mint" : "neutral"} className="shrink-0">
+                  {p.submittedAt ? "ตอบแล้ว" : "ยังไม่ตอบ"}
+                </Pill>
+                {isOwner ? (
+                  <CopyPersonalLinkButton slug={trip.slug} participantId={p.id} shareUrl={shareUrl} />
                 ) : null}
-              </span>
-              <Pill tone={p.submittedAt ? "mint" : "neutral"} className="shrink-0">
-                {p.submittedAt ? "ตอบแล้ว" : "ยังไม่ตอบ"}
-              </Pill>
+              </div>
+              {p.comment ? (
+                <p className="mt-1.5 pl-[44px] text-[0.82rem] text-ink-2 break-words">
+                  “{p.comment}”
+                </p>
+              ) : null}
             </li>
           ))}
         </ul>

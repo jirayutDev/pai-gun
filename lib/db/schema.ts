@@ -103,6 +103,8 @@ export const participants = pgTable(
     isKey: boolean("is_key").notNull().default(false),
     /** key ใน AVATAR_FILES (components/ui/avatar.tsx) ที่เลือกเอง — null = ยังไม่เลือก (hash จากชื่อแทน) */
     avatarKey: text("avatar_key"),
+    /** ความคิดเห็นสั้น ๆ ที่พิมพ์คู่กับวันว่าง — null = ไม่ได้เขียนไว้ */
+    comment: text("comment"),
     rsvp: text("rsvp", { enum: ["going", "maybe", "out"] }),
     plusOnes: integer("plus_ones").notNull().default(0),
     /** ดูหมายเหตุเรื่อง mode ที่คอลัมน์ deadline ของตาราง trips ด้านบน */

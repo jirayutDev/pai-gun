@@ -42,6 +42,8 @@ export const MAX_NAME_LENGTH = 40;
 export const MAX_TITLE_LENGTH = 80;
 /** ความยาวโน้ตสูงสุด */
 export const MAX_NOTE_LENGTH = 500;
+/** ความยาวความคิดเห็นของผู้เข้าร่วมสูงสุด (สั้นกว่าโน้ตของทริป เพราะตั้งใจให้พิมพ์เร็ว) */
+export const MAX_COMMENT_LENGTH = 200;
 
 /**
  * ข้อผิดพลาดที่ "ผู้ใช้อ่านแล้วแก้ได้" — ข้อความเป็นภาษาไทยและบอกวิธีแก้
@@ -79,6 +81,7 @@ function rowsToParticipant(row: ParticipantRow, dayRows: AvailabilityRow[]): Par
     token: row.token,
     isKey: row.isKey,
     avatarKey: row.avatarKey,
+    comment: row.comment,
     days,
     rsvp: row.rsvp as Rsvp,
     plusOnes: row.plusOnes,
@@ -211,6 +214,7 @@ function buildParticipantWrites(tripId: string, trip: Trip): BatchItem<"pg">[] {
           token: p.token,
           isKey: p.isKey,
           avatarKey: p.avatarKey,
+          comment: p.comment,
           rsvp: p.rsvp,
           plusOnes: p.plusOnes,
           submittedAt: p.submittedAt === null ? null : new Date(p.submittedAt),
@@ -223,6 +227,7 @@ function buildParticipantWrites(tripId: string, trip: Trip): BatchItem<"pg">[] {
             token: p.token,
             isKey: p.isKey,
             avatarKey: p.avatarKey,
+            comment: p.comment,
             rsvp: p.rsvp,
             plusOnes: p.plusOnes,
             submittedAt: p.submittedAt === null ? null : new Date(p.submittedAt),
@@ -516,6 +521,7 @@ export async function createTrip(input: CreateTripInput): Promise<Trip> {
     isKey: m.isKey,
     // ยังไม่เลือกหน้าตาเอง — Avatar component จะ hash จากชื่อแทน
     avatarKey: null,
+    comment: null,
     rsvp: null,
     plusOnes: 0,
     // null = ยังไม่เคยกดบันทึก จึงยังนับเป็น "รอตอบ"
