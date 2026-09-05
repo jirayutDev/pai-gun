@@ -1,27 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { AVATAR_FILES, isAvatarKey } from "@/lib/avatars";
+export { AVATAR_FILES, type AvatarKey } from "@/lib/avatars";
 
 /**
  * อวตาร 3D วงกลม — ที่มา Microsoft Fluent Emoji (สไตล์ 3D, สัญญาอนุญาต MIT)
  * ไฟล์อยู่ที่ /public/avatars/*.webp (แปลงเป็น WebP 160×160 ไว้แล้ว ไม่ใช่ 1024px
  * ย่อด้วย CSS เพราะ Vercel Hobby มีโควตา image optimization จำกัด)
  * ดู THIRD_PARTY_NOTICES.md สำหรับข้อความสัญญาอนุญาตเต็ม
+ *
+ * รายชื่อไฟล์ (AVATAR_FILES) อยู่ที่ lib/avatars.ts แยกออกไปเพราะ app/actions.ts
+ * (server action) ก็ต้องใช้รายการเดียวกันตอนตรวจ avatarKey ที่ผู้ใช้เลือก
  */
-const AVATAR_FILES = [
-  "person-default",
-  "person-medium",
-  "person-dark",
-  "person-light",
-  "person-medium-dark",
-  "person-medium-light",
-  "technologist",
-  "artist",
-  "student",
-  "singer",
-  "scientist",
-  "astronaut",
-] as const;
 
 /** พื้นพาสเทลของวงกลมอักษรย่อตอน fallback — ใช้แค่ตกแต่ง ไม่ใช่สีสถานะ */
 const PASTEL_FALLBACKS = [
@@ -51,12 +42,14 @@ function initial(name: string): string {
 
 export interface AvatarProps {
   name: string;
+  /** เลือกเองไว้ (จาก AvatarPicker) — ถ้าไม่ใช่ key ที่รู้จักหรือไม่ใส่มา จะ hash จาก name แทน */
+  avatarKey?: string | null;
   /** ขนาดจริงที่แสดง (px) — ดีฟอลต์ 64 ตามช่วง 64–96px ที่ตั้งใจไว้ */
   size?: number;
   className?: string;
 }
 
-export default function Avatar({ name, size = 64, className = "" }: AvatarProps) {
+export default function Avatar({ name, avatarKey = null, size = 64, className = "" }: AvatarProps) {
   const [broken, setBroken] = useState(false);
   const hash = hashName(name);
 
@@ -73,7 +66,7 @@ export default function Avatar({ name, size = 64, className = "" }: AvatarProps)
     );
   }
 
-  const file = AVATAR_FILES[hash % AVATAR_FILES.length];
+  const file = avatarKey !== null && isAvatarKey(avatarKey) ? avatarKey : AVATAR_FILES[hash % AVATAR_FILES.length];
   return (
     // eslint-disable-next-line @next/next/no-img-element -- ตั้งใจไม่ใช้ next/image
     // เพราะไฟล์ถูก resize ไว้แล้วที่ต้นทาง (160×160) ไม่ต้องพึ่งโควตา image optimization

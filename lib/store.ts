@@ -78,6 +78,7 @@ function rowsToParticipant(row: ParticipantRow, dayRows: AvailabilityRow[]): Par
     name: row.name,
     token: row.token,
     isKey: row.isKey,
+    avatarKey: row.avatarKey,
     days,
     rsvp: row.rsvp as Rsvp,
     plusOnes: row.plusOnes,
@@ -209,6 +210,7 @@ function buildParticipantWrites(tripId: string, trip: Trip): BatchItem<"pg">[] {
           name: p.name,
           token: p.token,
           isKey: p.isKey,
+          avatarKey: p.avatarKey,
           rsvp: p.rsvp,
           plusOnes: p.plusOnes,
           submittedAt: p.submittedAt === null ? null : new Date(p.submittedAt),
@@ -220,6 +222,7 @@ function buildParticipantWrites(tripId: string, trip: Trip): BatchItem<"pg">[] {
             name: p.name,
             token: p.token,
             isKey: p.isKey,
+            avatarKey: p.avatarKey,
             rsvp: p.rsvp,
             plusOnes: p.plusOnes,
             submittedAt: p.submittedAt === null ? null : new Date(p.submittedAt),
@@ -511,6 +514,8 @@ export async function createTrip(input: CreateTripInput): Promise<Trip> {
     // ทุกคนได้ token ของตัวเอง — นี่คือลิงก์ส่วนตัวที่เจ้าภาพจะส่งให้แต่ละคน
     token: makeToken(),
     isKey: m.isKey,
+    // ยังไม่เลือกหน้าตาเอง — Avatar component จะ hash จากชื่อแทน
+    avatarKey: null,
     rsvp: null,
     plusOnes: 0,
     // null = ยังไม่เคยกดบันทึก จึงยังนับเป็น "รอตอบ"

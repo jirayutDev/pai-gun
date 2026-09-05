@@ -29,6 +29,13 @@
       "when": 1788583716491,
       "tag": "0003_cheerful_cammi",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788588112472,
+      "tag": "0004_sweet_the_order",
+      "breakpoints": true
     }
   ]
 }

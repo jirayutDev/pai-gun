@@ -87,6 +87,7 @@ export default async function TripFillPage({
       id: p.id,
       name: p.name,
       isKey: p.isKey,
+      avatarKey: p.avatarKey,
       submittedAt: p.submittedAt,
       days: p.days,
     })),

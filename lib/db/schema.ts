@@ -101,6 +101,8 @@ export const participants = pgTable(
     /** ลิงก์ส่วนตัว — เทียบด้วย secretEquals เท่านั้น ห้าม `===` */
     token: text("token").notNull(),
     isKey: boolean("is_key").notNull().default(false),
+    /** key ใน AVATAR_FILES (components/ui/avatar.tsx) ที่เลือกเอง — null = ยังไม่เลือก (hash จากชื่อแทน) */
+    avatarKey: text("avatar_key"),
     rsvp: text("rsvp", { enum: ["going", "maybe", "out"] }),
     plusOnes: integer("plus_ones").notNull().default(0),
     /** ดูหมายเหตุเรื่อง mode ที่คอลัมน์ deadline ของตาราง trips ด้านบน */

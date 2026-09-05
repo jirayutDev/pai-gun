@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { cancelTripAction, lockDateAction } from "@/app/actions";
-import { formatDowRange, formatRange } from "@/lib/dates";
+import { cancelTripAction, editTripAction, lockDateAction } from "@/app/actions";
+import { formatDowRange, formatRange, isISODate } from "@/lib/dates";
 import { rankWindows } from "@/lib/schedule";
 import type { Participant, Trip, TripWindow } from "@/lib/types";
 import Avatar from "@/components/ui/avatar";
+import DatePicker from "@/components/ui/date-picker";
+import DayStatusCalendar from "@/components/ui/day-status-calendar";
 import { Pill } from "@/components/ui/pill";
 import { FloatingDots } from "@/components/ui/floating-dots";
-import { confirmDialog, toastError } from "@/components/ui/swal";
+import { confirmDialog, toastError, toastSuccess } from "@/components/ui/swal";
 
 /** trip เวอร์ชันที่ปลอดภัยจะส่งลง client — ไม่มี ownerId และไม่มี token ของใคร */
 export type PublicParticipant = Omit<Participant, "token">;
@@ -121,6 +123,16 @@ export default function ResultView({ trip, isOwner, shareUrl }: ResultViewProps)
   const [length, setLength] = useState(trip.lengthDays);
   const [pending, startTransition] = useTransition();
 
+  // ── แก้ไขข้อมูลพื้นฐานของทริป (เจ้าภาพ, เฉพาะตอนโพลยังเปิดอยู่) ──────────
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(trip.title);
+  const [editNote, setEditNote] = useState(trip.note);
+  const [editRangeStart, setEditRangeStart] = useState(trip.rangeStart);
+  const [editRangeEnd, setEditRangeEnd] = useState(trip.rangeEnd);
+  const [editLength, setEditLength] = useState(trip.lengthDays);
+  const [editDeadline, setEditDeadline] = useState(trip.deadline ? trip.deadline.slice(0, 10) : "");
+  const [editAllowSelfJoin, setEditAllowSelfJoin] = useState(trip.allowSelfJoin);
+
   const rankable = useMemo(() => toRankable(trip), [trip]);
   const rank = useMemo(() => rankWindows(rankable, length), [rankable, length]);
 
@@ -163,19 +175,165 @@ export default function ResultView({ trip, isOwner, shareUrl }: ResultViewProps)
     });
   }
 
+  function onSaveEdit() {
+    if (!isOwner) return;
+    startTransition(async () => {
+      const res = await editTripAction(trip.slug, {
+        title: editTitle,
+        note: editNote,
+        rangeStart: editRangeStart,
+        rangeEnd: editRangeEnd,
+        lengthDays: editLength,
+        // input type=date คืนแค่วันที่ล้วน ต่อเวลาสิ้นวันตามเวลาไทยเหมือนตอนสร้างทริป
+        deadline: editDeadline === "" ? null : new Date(`${editDeadline}T23:59:59+07:00`).toISOString(),
+        allowSelfJoin: editAllowSelfJoin,
+      });
+      if (!res.ok) {
+        toastError(res.error);
+        return;
+      }
+      toastSuccess("บันทึกแล้ว");
+      setEditing(false);
+    });
+  }
+
   return (
     <div className="max-w-[32rem] md:max-w-[36rem] mx-auto">
       {/* ---------- หัวหน้า ---------- */}
-      <header>
-        <p className="text-[0.8rem] text-ink-3">
-          {formatRange(trip.rangeStart, trip.rangeEnd)} · ตอบแล้ว {rank.answered} จาก{" "}
-          {rank.invited} คน
-        </p>
-        <h1 className="font-display font-bold text-[1.9rem] tracking-[-0.03em] mt-1">
-          {trip.title}
-        </h1>
-        {trip.note ? <p className="text-[0.88rem] text-ink-2 mt-1">{trip.note}</p> : null}
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[0.8rem] text-ink-3">
+            {formatRange(trip.rangeStart, trip.rangeEnd)} · ตอบแล้ว {rank.answered} จาก{" "}
+            {rank.invited} คน
+          </p>
+          <h1 className="font-display font-bold text-[1.9rem] tracking-[-0.03em] mt-1">
+            {trip.title}
+          </h1>
+          {trip.note ? <p className="text-[0.88rem] text-ink-2 mt-1">{trip.note}</p> : null}
+        </div>
+        {canHostAct && trip.status === "polling" ? (
+          <button
+            type="button"
+            onClick={() => setEditing((v) => !v)}
+            className="shrink-0 min-h-[40px] px-4 rounded-full bg-fill text-ink-2 font-display font-semibold text-[0.82rem]"
+          >
+            {editing ? "ปิดฟอร์ม" : "แก้ไขทริป"}
+          </button>
+        ) : null}
       </header>
+
+      {/* ---------- ฟอร์มแก้ไขข้อมูลพื้นฐาน (เจ้าภาพ, เฉพาะตอนโพลยังเปิดอยู่) ---------- */}
+      {editing && canHostAct && trip.status === "polling" ? (
+        <div className="bg-surface border border-line rounded-[20px] p-4 mt-4 grid gap-3">
+          <div>
+            <label htmlFor="edit-title" className="block pb-1 text-[12px] text-ink-3">
+              ชื่อทริป
+            </label>
+            <input
+              id="edit-title"
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="w-full min-h-[44px] rounded-full bg-fill px-4 text-[15px] text-ink outline-none"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="edit-note" className="block pb-1 text-[12px] text-ink-3">
+              รายละเอียดเพิ่มเติม
+            </label>
+            <textarea
+              id="edit-note"
+              rows={2}
+              value={editNote}
+              onChange={(e) => setEditNote(e.target.value)}
+              className="w-full rounded-[16px] bg-fill px-4 py-2.5 text-[14px] text-ink outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label htmlFor="edit-range-start" className="block pb-1 text-[12px] text-ink-3">
+                เริ่ม
+              </label>
+              <DatePicker id="edit-range-start" value={editRangeStart} onChange={setEditRangeStart} />
+            </div>
+            <div>
+              <label htmlFor="edit-range-end" className="block pb-1 text-[12px] text-ink-3">
+                ถึง
+              </label>
+              <DatePicker
+                id="edit-range-end"
+                value={editRangeEnd}
+                min={editRangeStart}
+                onChange={setEditRangeEnd}
+              />
+            </div>
+          </div>
+
+          <div>
+            <p className="pb-1 text-[12px] text-ink-3">ทริปยาวกี่วัน</p>
+            <div role="group" aria-label="ทริปยาวกี่วัน" className="flex gap-1 bg-fill p-1 rounded-full overflow-x-auto">
+              {LENGTH_CHOICES.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  aria-pressed={n === editLength}
+                  onClick={() => setEditLength(n)}
+                  className={`shrink-0 min-h-[40px] px-3.5 rounded-full font-display font-semibold text-[0.84rem] ${
+                    n === editLength ? "bg-brand text-on-brand" : "text-ink-2"
+                  }`}
+                >
+                  {n} วัน
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="edit-deadline" className="block pb-1 text-[12px] text-ink-3">
+              ปิดโพลวันไหน (ไม่กำหนดก็ได้)
+            </label>
+            <DatePicker
+              id="edit-deadline"
+              value={editDeadline}
+              onChange={setEditDeadline}
+              placeholder="ไม่กำหนด"
+            />
+          </div>
+
+          <button
+            type="button"
+            role="switch"
+            aria-checked={editAllowSelfJoin}
+            onClick={() => setEditAllowSelfJoin((v) => !v)}
+            className="flex w-full min-h-[44px] items-center gap-3 rounded-[16px] bg-fill px-3 py-2 text-left"
+          >
+            <span
+              aria-hidden="true"
+              className={`flex h-7 w-12 shrink-0 items-center rounded-full px-[3px] ${
+                editAllowSelfJoin ? "bg-brand" : "bg-fill-2"
+              }`}
+            >
+              <span
+                className={`h-[22px] w-[22px] rounded-full bg-surface transition-transform ${
+                  editAllowSelfJoin ? "translate-x-[20px]" : "translate-x-0"
+                }`}
+              />
+            </span>
+            <span className="text-[13px] leading-snug text-ink">ให้คนอื่นเพิ่มชื่อตัวเองจากลิงก์ได้</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={pending || !isISODate(editRangeStart) || !isISODate(editRangeEnd) || editTitle.trim() === ""}
+            onClick={onSaveEdit}
+            className="min-h-[48px] rounded-full bg-brand text-on-brand font-display font-semibold disabled:opacity-60"
+          >
+            {pending ? "กำลังบันทึก…" : "บันทึกการแก้ไข"}
+          </button>
+        </div>
+      ) : null}
 
       {isCancelled ? (
         <div className="bg-coral-fill text-coral-ink rounded-[20px] px-4 py-3 mt-4 text-[0.9rem]">
@@ -377,6 +535,19 @@ export default function ResultView({ trip, isOwner, shareUrl }: ResultViewProps)
         </section>
       ) : null}
 
+      {/* ---------- ปฏิทินความว่างทั้งหมด — แตะช่องวันดูว่าใครว่าง/ไม่ว่างวันนั้น ---------- */}
+      <section className="mt-6">
+        <h2 className="font-display font-semibold text-[1.05rem] mb-1">ปฏิทินความว่างทั้งหมด</h2>
+        <p className="text-[0.78rem] text-ink-3 mb-3">
+          ตัวเลขในช่อง = ว่างกี่คนจากทั้งหมด · แตะช่องไหนดูรายชื่อของวันนั้น
+        </p>
+        <DayStatusCalendar
+          rangeStart={trip.rangeStart}
+          rangeEnd={trip.rangeEnd}
+          participants={trip.participants}
+        />
+      </section>
+
       {/* ---------- ใครตอบแล้ว ---------- */}
       <section className="mt-6">
         <h2 className="font-display font-semibold text-[1.05rem] mb-2">ใครตอบแล้ว</h2>
@@ -386,7 +557,7 @@ export default function ResultView({ trip, isOwner, shareUrl }: ResultViewProps)
               key={p.id}
               className="flex items-center gap-3 bg-surface border border-line rounded-[13px] px-3 py-2"
             >
-              <Avatar name={p.name} size={32} className="shrink-0" />
+              <Avatar name={p.name} avatarKey={p.avatarKey} size={32} className="shrink-0" />
               <span className="font-display font-semibold text-[0.9rem] flex-1 min-w-0 truncate">
                 {p.name}
                 {p.isKey ? (

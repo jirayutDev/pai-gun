@@ -22,12 +22,17 @@
 import { revalidatePath } from "next/cache";
 
 import { getSessionUser } from "@/lib/auth/session";
+import { isAvatarKey } from "@/lib/avatars";
 import { addDays, daysBetween, eachDay, isISODate } from "@/lib/dates";
 import { makeId, makeToken } from "@/lib/ids";
 import {
   InputError,
+  MAX_LENGTH_DAYS,
   MAX_MEMBERS,
   MAX_NAME_LENGTH,
+  MAX_NOTE_LENGTH,
+  MAX_RANGE_DAYS,
+  MAX_TITLE_LENGTH,
   createTrip,
   findParticipantByToken,
   nameKey,
@@ -139,6 +144,110 @@ export async function createTripAction(
 }
 
 /* ------------------------------------------------------------------ *
+ * แก้ไขข้อมูลพื้นฐานของทริป (เจ้าภาพ)
+ * ------------------------------------------------------------------ */
+
+export interface EditTripInput {
+  title: string;
+  note: string;
+  rangeStart: string;
+  rangeEnd: string;
+  lengthDays: number;
+  deadline: string | null;
+  allowSelfJoin: boolean;
+}
+
+/**
+ * เจ้าภาพแก้ชื่อ/โน้ต/ช่วงวันที่เปิดโหวต/ทริปยาวกี่วัน/เดดไลน์/allowSelfJoin
+ * ทำได้เฉพาะตอนโพลยัง "polling" อยู่ — ล็อกวันไปแล้วแปลว่าตัดสินใจแล้ว เปลี่ยน
+ * ช่วงวันตอนนั้นจะสับสน (ให้ยกเลิกแล้วตั้งใหม่แทนถ้าอยากเปลี่ยนหลังล็อก)
+ *
+ * ไม่แตะ participants เลย — เพิ่ม/ลบคนใช้ joinTripAction/removeParticipantAction
+ * ถ้าช่วงวันใหม่แคบกว่าเดิมจนบางวันที่มีคนตอบไว้หลุดจากช่วง ข้อมูลวันนั้นไม่ถูกลบทิ้ง
+ * แค่ไม่ถูกใช้คำนวณอีกต่อไป (lib/schedule.ts วนตาม eachDay(rangeStart, rangeEnd)
+ * ปัจจุบันเท่านั้น) — ถ้าขยายช่วงกลับมาครอบคลุมอีกครั้ง ข้อมูลเดิมจะกลับมาใช้ได้เอง
+ */
+export async function editTripAction(
+  slug: string,
+  input: EditTripInput,
+): Promise<ActionResult<null>> {
+  try {
+    const user = await getSessionUser();
+    await updateTrip(slug, (trip) => {
+      assertOwner(trip, user?.id ?? null);
+
+      if (trip.status !== "polling") {
+        throw new InputError(
+          "แก้ไขข้อมูลพื้นฐานได้เฉพาะตอนโพลยังเปิดอยู่ — ถ้าล็อกวันไปแล้วอยากเปลี่ยน ให้ยกเลิกทริปนี้แล้วตั้งใหม่",
+        );
+      }
+
+      const title = typeof input.title === "string" ? input.title.trim() : "";
+      if (title === "") {
+        throw new InputError("ยังไม่ได้ตั้งชื่อทริป — ใส่ชื่อสั้น ๆ ที่เพื่อนเห็นแล้วรู้เรื่อง");
+      }
+      if (title.length > MAX_TITLE_LENGTH) {
+        throw new InputError(`ชื่อทริปยาวเกินไป — ย่อให้ไม่เกิน ${MAX_TITLE_LENGTH} ตัวอักษร`);
+      }
+
+      const note = typeof input.note === "string" ? input.note.trim() : "";
+      if (note.length > MAX_NOTE_LENGTH) {
+        throw new InputError(`รายละเอียดยาวเกินไป — ย่อให้ไม่เกิน ${MAX_NOTE_LENGTH} ตัวอักษร`);
+      }
+
+      const rangeStart = typeof input.rangeStart === "string" ? input.rangeStart.trim() : "";
+      const rangeEnd = typeof input.rangeEnd === "string" ? input.rangeEnd.trim() : "";
+      if (!isISODate(rangeStart) || !isISODate(rangeEnd)) {
+        throw new InputError("วันที่ต้องอยู่ในรูปแบบ YYYY-MM-DD — เลือกวันจากปฏิทินอีกครั้ง");
+      }
+      const span = daysBetween(rangeStart, rangeEnd);
+      if (Number.isNaN(span) || span < 0) {
+        throw new InputError("วันสิ้นสุดต้องอยู่หลังวันเริ่ม — สลับสองวันนี้ให้ถูกลำดับ");
+      }
+      const rangeDays = span + 1;
+      if (rangeDays > MAX_RANGE_DAYS) {
+        throw new InputError(`ช่วงกว้าง ${rangeDays} วัน เกิน ${MAX_RANGE_DAYS} วันที่ระบบรับได้`);
+      }
+
+      const lengthDays = typeof input.lengthDays === "number" ? input.lengthDays : Number.NaN;
+      if (!Number.isInteger(lengthDays) || lengthDays < 1 || lengthDays > MAX_LENGTH_DAYS) {
+        throw new InputError(`ทริปยาวได้ 1 ถึง ${MAX_LENGTH_DAYS} วัน`);
+      }
+      if (rangeDays < lengthDays) {
+        throw new InputError(
+          `ช่วงที่เลือกมีแค่ ${rangeDays} วัน แต่ทริปยาว ${lengthDays} วัน — ขยายช่วงวันหรือลดจำนวนวันลง`,
+        );
+      }
+
+      let deadline: string | null = null;
+      if (typeof input.deadline === "string" && input.deadline.trim() !== "") {
+        const raw = input.deadline.trim();
+        if (Number.isNaN(Date.parse(raw))) {
+          throw new InputError("อ่านวันปิดโพลไม่ออก — เลือกวันใหม่ หรือเว้นว่างไว้ถ้าไม่กำหนด");
+        }
+        deadline = raw;
+      }
+
+      return {
+        ...trip,
+        title,
+        note,
+        rangeStart,
+        rangeEnd,
+        lengthDays,
+        deadline,
+        allowSelfJoin: input.allowSelfJoin === true,
+      };
+    });
+
+    revalidateTrip(slug);
+    return ok(null);
+  } catch (err) {
+    return fail(toUserError(err, "แก้ไขทริปไม่สำเร็จเพราะระบบมีปัญหา — ลองอีกครั้ง"));
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * เข้าร่วมทริปเอง (จากลิงก์แชร์)
  * ------------------------------------------------------------------ */
 
@@ -209,6 +318,7 @@ export async function joinTripAction(
         token: makeToken(),
         // คนที่เข้ามาเองไม่ถือเป็นคนสำคัญโดยปริยาย — เจ้าภาพติ๊กให้ทีหลังได้
         isKey: false,
+        avatarKey: null,
         days: {},
         rsvp: null,
         plusOnes: 0,
@@ -293,6 +403,36 @@ export async function saveAvailabilityAction(
     return fail(
       toUserError(err, "บันทึกวันว่างไม่สำเร็จเพราะระบบมีปัญหา — ลองกดบันทึกอีกครั้ง"),
     );
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * เลือกอวตารเอง
+ * ------------------------------------------------------------------ */
+
+/**
+ * ผู้เข้าร่วมเลือกหน้าตาอวตารของตัวเอง (จาก AVATAR_FILES ใน lib/avatars.ts)
+ * ตรวจ token เหมือน saveAvailabilityAction — ไม่ล็อกด้วยสถานะโพล เพราะเปลี่ยน
+ * หน้าตาไม่กระทบผลโหวตเลย ทำได้ตลอดแม้ทริปจะล็อก/จบ/ยกเลิกไปแล้วก็ตาม
+ */
+export async function setAvatarAction(
+  slug: string,
+  token: string,
+  avatarKey: string,
+): Promise<ActionResult<null>> {
+  try {
+    if (!isAvatarKey(avatarKey)) {
+      throw new InputError("อวตารนี้ไม่มีในระบบ — เลือกจากรายการที่มีให้เท่านั้น");
+    }
+    await updateTrip(slug, async (trip) => {
+      const me = await requireParticipant(trip, token);
+      return replaceParticipant(trip, { ...me, avatarKey, updatedAt: new Date().toISOString() });
+    });
+
+    revalidateTrip(slug);
+    return ok(null);
+  } catch (err) {
+    return fail(toUserError(err, "เปลี่ยนอวตารไม่สำเร็จเพราะระบบมีปัญหา — ลองอีกครั้ง"));
   }
 }
 

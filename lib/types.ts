@@ -44,6 +44,8 @@ export interface Participant {
   token: string;
   /** คนที่ขาดไม่ได้ ถ้าคนนี้ไม่ว่าง ช่วงนั้นถูกตัดออก */
   isKey: boolean;
+  /** key ใน AVATAR_FILES ที่เลือกเอง — null = ยังไม่เลือก (คอมโพเนนต์ Avatar จะ hash จากชื่อแทน) */
+  avatarKey: string | null;
   /** "YYYY-MM-DD" -> AvailState — วันที่ไม่มีคีย์ถือว่ายังไม่ระบุ */
   days: Record<string, AvailState>;
   rsvp: Rsvp;

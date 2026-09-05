@@ -21,13 +21,15 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import PaintCalendar from "@/components/paint-calendar";
-import { joinTripAction, saveAvailabilityAction } from "@/app/actions";
+import { joinTripAction, saveAvailabilityAction, setAvatarAction } from "@/app/actions";
 import { formatRange, formatShort } from "@/lib/dates";
 import type { AvailState, TripStatus } from "@/lib/types";
-import Avatar from "@/components/ui/avatar";
+import Avatar, { type AvatarKey } from "@/components/ui/avatar";
+import AvatarPicker from "@/components/ui/avatar-picker";
 import { FloatingBar } from "@/components/ui/floating-bar";
 import { FloatingDots } from "@/components/ui/floating-dots";
 import { Pill } from "@/components/ui/pill";
+import { toastError } from "@/components/ui/swal";
 
 /* -------------------------------------------------------------------------- */
 /* ชนิดข้อมูลเวอร์ชัน "ปลอดภัยที่จะส่งลง client"                              */
@@ -42,6 +44,8 @@ export interface PublicParticipant {
   id: string;
   name: string;
   isKey: boolean;
+  /** key ใน AVATAR_FILES ที่เลือกเอง — null = ยังไม่เลือก (hash จากชื่อแทน) */
+  avatarKey: string | null;
   /** null = ยังไม่เคยกดบันทึก */
   submittedAt: string | null;
   days: Record<string, AvailState>;
@@ -258,6 +262,20 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
     me === null
       ? ""
       : (trip.participants.find((p) => p.id === me.participantId)?.name ?? me.name);
+
+  const myAvatarKey =
+    me === null ? null : (trip.participants.find((p) => p.id === me.participantId)?.avatarKey ?? null);
+
+  const onChangeAvatar = useCallback(
+    (key: AvatarKey) => {
+      if (me === null) return;
+      startTransition(async () => {
+        const res = await setAvatarAction(slug, me.token, key);
+        if (!res.ok) toastError(res.error);
+      });
+    },
+    [slug, me],
+  );
 
   const deadline = trip.deadline === null ? null : deadlineText(trip.deadline);
 
@@ -479,7 +497,7 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
                         p.submittedAt === null ? "bg-fill text-ink-2" : "bg-brand-fill text-brand-ink"
                       }`}
                     >
-                      <Avatar name={p.name} size={28} />
+                      <Avatar name={p.name} avatarKey={p.avatarKey} size={28} />
                       {p.name}
                       {p.submittedAt === null ? " · ยังไม่ตอบ" : " · ตอบแล้ว"}
                     </li>
@@ -500,7 +518,7 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
                         onClick={() => claim(p.name)}
                         className="flex min-h-[56px] w-full items-center gap-3 rounded-[16px] bg-fill px-4 text-left disabled:opacity-60"
                       >
-                        <Avatar name={p.name} size={40} />
+                        <Avatar name={p.name} avatarKey={p.avatarKey} size={40} />
                         <span className="flex-1 font-display font-semibold text-[17px] text-ink">
                           {p.name}
                         </span>
@@ -526,7 +544,7 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
                           onClick={() => setConfirmName(p.name)}
                           className="flex min-h-[44px] items-center gap-2 rounded-full bg-fill py-1 pl-1 pr-4 text-[14px] text-ink-3 disabled:opacity-60"
                         >
-                          <Avatar name={p.name} size={32} className="opacity-90" />
+                          <Avatar name={p.name} avatarKey={p.avatarKey} size={32} className="opacity-90" />
                           <span>{p.name}</span>
                           {/* "ตอบแล้ว" ไม่ใช่สถานะว่าง จึงใช้ brand แทนมิ้นต์ */}
                           <span className="rounded-full bg-brand-fill px-2 py-0.5 text-[11px] text-brand-ink">
@@ -592,7 +610,7 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
       {/* ฉันคือใคร + ทางออกถ้าแตะชื่อผิดคน (เกิดบ่อยเวลาแชร์เครื่องกัน) */}
       <div className="flex flex-wrap items-center gap-2 pb-4">
         <span className="flex min-h-[44px] items-center gap-2 rounded-full bg-fill py-1 pl-1 pr-4 text-[14px] text-ink">
-          <Avatar name={myName} size={32} />
+          <AvatarPicker name={myName} value={myAvatarKey as AvatarKey | null} onChange={onChangeAvatar} size={32} />
           คุณ: <span className="font-display font-semibold">{myName}</span>
         </span>
         <button
@@ -661,7 +679,7 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
                     key={p.id}
                     className="flex min-h-[40px] items-center gap-1.5 rounded-full bg-fill py-1 pl-1 pr-3 text-[13px] text-ink-2"
                   >
-                    <Avatar name={p.name} size={26} />
+                    <Avatar name={p.name} avatarKey={p.avatarKey} size={26} />
                     {p.name}
                   </li>
                 ))}
