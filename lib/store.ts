@@ -22,9 +22,17 @@ import type { BatchItem } from "drizzle-orm/batch";
 
 import { daysBetween, isISODate } from "@/lib/dates";
 import { db } from "@/lib/db/client";
-import { availability, participants, trips } from "@/lib/db/schema";
+import { availability, participants, placeVotes, places, trips } from "@/lib/db/schema";
 import { makeId, makeSlug, makeToken } from "@/lib/ids";
-import type { AvailState, CreateTripInput, Participant, Rsvp, Trip, TripStatus } from "@/lib/types";
+import type {
+  AvailState,
+  CreateTripInput,
+  Participant,
+  Place,
+  Rsvp,
+  Trip,
+  TripStatus,
+} from "@/lib/types";
 
 /* ------------------------------------------------------------------ *
  * ค่าคงที่ / ขอบเขตที่ยอมรับ
@@ -44,6 +52,18 @@ export const MAX_TITLE_LENGTH = 80;
 export const MAX_NOTE_LENGTH = 500;
 /** ความยาวความคิดเห็นของผู้เข้าร่วมสูงสุด (สั้นกว่าโน้ตของทริป เพราะตั้งใจให้พิมพ์เร็ว) */
 export const MAX_COMMENT_LENGTH = 200;
+/** จำนวนสถานที่เสนอได้สูงสุดต่อทริป — กันลิสต์ยาวจนเลือกไม่ไหว */
+export const MAX_PLACES = 30;
+/** ความยาวชื่อสถานที่สูงสุด */
+export const MAX_PLACE_NAME_LENGTH = 60;
+/** ความยาวลิงก์สูงสุด */
+export const MAX_PLACE_URL_LENGTH = 500;
+/** ความยาวโลเคชั่น (ชื่อ/ที่อยู่แบบข้อความ) สูงสุด */
+export const MAX_PLACE_LOCATION_LENGTH = 120;
+/** ความยาวราคาสูงสุด — เป็นข้อความอิสระ เช่น "500-800/คน" ไม่ใช่ตัวเลขล้วน */
+export const MAX_PLACE_PRICE_LENGTH = 40;
+/** ความยาวรายละเอียดสถานที่สูงสุด */
+export const MAX_PLACE_NOTE_LENGTH = 300;
 
 /**
  * ข้อผิดพลาดที่ "ผู้ใช้อ่านแล้วแก้ได้" — ข้อความเป็นภาษาไทยและบอกวิธีแก้
@@ -63,6 +83,8 @@ export class InputError extends Error {
 type TripRow = typeof trips.$inferSelect;
 type ParticipantRow = typeof participants.$inferSelect;
 type AvailabilityRow = typeof availability.$inferSelect;
+type PlaceRow = typeof places.$inferSelect;
+type PlaceVoteRow = typeof placeVotes.$inferSelect;
 
 /** แปลง Date | null เป็น ISO8601 string | null — ดูหมายเหตุที่ lib/db/schema.ts */
 function isoOrNull(d: Date | null): string | null {
@@ -90,10 +112,27 @@ function rowsToParticipant(row: ParticipantRow, dayRows: AvailabilityRow[]): Par
   };
 }
 
+function rowsToPlace(row: PlaceRow, voteRows: PlaceVoteRow[]): Place {
+  return {
+    id: row.id,
+    name: row.name,
+    url: row.url,
+    location: row.location,
+    price: row.price,
+    note: row.note,
+    addedByParticipantId: row.addedByParticipantId,
+    addedByName: row.addedByName,
+    votes: voteRows.map((v) => v.participantId),
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 function rowsToTrip(
   row: TripRow,
   participantRows: ParticipantRow[],
   availRowsByParticipant: Map<string, AvailabilityRow[]>,
+  placeRows: PlaceRow[],
+  voteRowsByPlace: Map<string, PlaceVoteRow[]>,
 ): Trip {
   return {
     id: row.id,
@@ -111,6 +150,7 @@ function rowsToTrip(
     participants: participantRows.map((p) =>
       rowsToParticipant(p, availRowsByParticipant.get(p.id) ?? []),
     ),
+    places: placeRows.map((p) => rowsToPlace(p, voteRowsByPlace.get(p.id) ?? [])),
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -126,6 +166,17 @@ function groupAvailByParticipant(rows: AvailabilityRow[]): Map<string, Availabil
   return map;
 }
 
+/** จัดกลุ่มแถว place_votes ตาม placeId ให้หาไวตอนประกอบ Trip */
+function groupVotesByPlace(rows: PlaceVoteRow[]): Map<string, PlaceVoteRow[]> {
+  const map = new Map<string, PlaceVoteRow[]>();
+  for (const r of rows) {
+    const arr = map.get(r.placeId);
+    if (arr) arr.push(r);
+    else map.set(r.placeId, [r]);
+  }
+  return map;
+}
+
 /**
  * โหลด Trip เต็ม (ทุกตาราง) จาก slug — คืน null ถ้าไม่พบ
  *
@@ -135,9 +186,13 @@ function groupAvailByParticipant(rows: AvailabilityRow[]): Map<string, Availabil
  * แบบธรรมดา (ไม่ล็อกแถว) แล้วพึ่ง compare-and-swap ด้วยคอลัมน์ `version` แทน
  * ดูรายละเอียดที่ `updateTrip` ด้านล่าง
  */
-async function loadTripBySlug(
-  slug: string,
-): Promise<{ row: TripRow; participantRows: ParticipantRow[]; availRows: AvailabilityRow[] } | null> {
+async function loadTripBySlug(slug: string): Promise<{
+  row: TripRow;
+  participantRows: ParticipantRow[];
+  availRows: AvailabilityRow[];
+  placeRows: PlaceRow[];
+  voteRows: PlaceVoteRow[];
+} | null> {
   const tripRows = await db.select().from(trips).where(eq(trips.slug, slug)).limit(1);
   const row = tripRows[0];
   if (row === undefined) return null;
@@ -160,7 +215,21 @@ async function loadTripBySlug(
             ),
           );
 
-  return { row, participantRows, availRows };
+  const placeRows = await db.select().from(places).where(eq(places.tripId, row.id));
+  const voteRows =
+    placeRows.length === 0
+      ? []
+      : await db
+          .select()
+          .from(placeVotes)
+          .where(
+            inArray(
+              placeVotes.placeId,
+              placeRows.map((p) => p.id),
+            ),
+          );
+
+  return { row, participantRows, availRows, placeRows, voteRows };
 }
 
 /** ฟิลด์ระดับ Trip (ไม่รวม participants/availability) ที่ต้องเขียนกลับ DB เสมอ */
@@ -270,6 +339,81 @@ function buildParticipantWrites(tripId: string, trip: Trip): BatchItem<"pg">[] {
   return writes;
 }
 
+/**
+ * ประกอบรายการคำสั่งเขียน places/place_votes ให้ตรงกับ `trip.places` ทั้งหมด —
+ * รูปแบบเดียวกับ buildParticipantWrites เป๊ะ ๆ (upsert ที่ยังอยู่ + ลบที่หายไป)
+ *
+ * ⚠️ ต้องต่อท้าย buildParticipantWrites เสมอ ไม่ใช่สลับก่อน — เพราะ places.added_by_participant_id
+ * และ place_votes.participant_id อ้าง participants.id อยู่ ถ้าคนที่เพิ่มไป/โหวตไว้ถูกลบออกจาก
+ * ก้อนใหม่ในรอบเดียวกัน ผู้เรียก (removeParticipantAction) ต้องเอา id นั้นออกจาก
+ * place.votes/addedByParticipantId ในก้อน Trip ที่ส่งมาเองก่อนแล้ว (ดู stripParticipantFromPlaces)
+ * ไม่งั้น insert ที่นี่จะชน foreign key ของแถวที่เพิ่งถูกลบไปในคำสั่งก่อนหน้า
+ */
+function buildPlaceWrites(tripId: string, trip: Trip): BatchItem<"pg">[] {
+  const writes: BatchItem<"pg">[] = [];
+  const keepIds = trip.places.map((p) => p.id);
+
+  // ลบสถานที่ที่ไม่อยู่ในก้อนใหม่แล้ว (ON DELETE CASCADE จัดการ place_votes ให้)
+  writes.push(
+    db.delete(places).where(
+      keepIds.length === 0
+        ? eq(places.tripId, tripId)
+        : and(eq(places.tripId, tripId), notInArray(places.id, keepIds)),
+    ),
+  );
+
+  for (const pl of trip.places) {
+    writes.push(
+      db
+        .insert(places)
+        .values({
+          id: pl.id,
+          tripId,
+          name: pl.name,
+          url: pl.url,
+          location: pl.location,
+          price: pl.price,
+          note: pl.note,
+          addedByParticipantId: pl.addedByParticipantId,
+          addedByName: pl.addedByName,
+          createdAt: new Date(pl.createdAt),
+        })
+        .onConflictDoUpdate({
+          target: places.id,
+          set: {
+            name: pl.name,
+            url: pl.url,
+            location: pl.location,
+            price: pl.price,
+            note: pl.note,
+            addedByParticipantId: pl.addedByParticipantId,
+            addedByName: pl.addedByName,
+          },
+        }),
+    );
+
+    // ลบเฉพาะโหวตที่ไม่ได้อยู่ในก้อนใหม่ของสถานที่นี้ — ไม่ใช่ลบทั้งชุดแล้วเขียนใหม่
+    writes.push(
+      db.delete(placeVotes).where(
+        pl.votes.length === 0
+          ? eq(placeVotes.placeId, pl.id)
+          : and(eq(placeVotes.placeId, pl.id), notInArray(placeVotes.participantId, pl.votes)),
+      ),
+    );
+
+    if (pl.votes.length > 0) {
+      writes.push(
+        db
+          .insert(placeVotes)
+          .values(pl.votes.map((participantId) => ({ placeId: pl.id, participantId })))
+          .onConflictDoNothing({ target: [placeVotes.placeId, placeVotes.participantId] }),
+      );
+    }
+  }
+
+  return writes;
+}
+
 /** ส่ง writes ที่ประกอบไว้ไปรันเป็นก้อนอะตอมมิกเดียวผ่าน db.batch() ถ้ามีอะไรให้ทำ */
 async function runBatch(writes: BatchItem<"pg">[]): Promise<void> {
   if (writes.length === 0) return;
@@ -315,6 +459,21 @@ export function uniqueName(desired: string, taken: ReadonlySet<string>): string 
   return `${base} (${makeId().slice(0, 4)})`;
 }
 
+/**
+ * เอา participantId ที่กำลังจะถูกลบออกจากทริป ออกจากทุกที่ที่ places อ้างถึงด้วย —
+ * ทั้งโหวตของคนนั้น (votes) และการเป็นคนเพิ่มสถานที่นั้น (addedByParticipantId → null,
+ * ยังคง addedByName ไว้แสดงผลได้ต่อ) ต้องเรียกก่อนคืนก้อน Trip ใหม่จาก
+ * removeParticipantAction เสมอ ไม่งั้น buildPlaceWrites จะพยายาม insert แถวที่อ้าง
+ * participants.id ซึ่งถูกลบไปแล้วในคำสั่งก่อนหน้าในก้อน batch เดียวกัน (ชน foreign key)
+ */
+export function stripParticipantFromPlaces(tripPlaces: Place[], participantId: string): Place[] {
+  return tripPlaces.map((p) => ({
+    ...p,
+    votes: p.votes.filter((id) => id !== participantId),
+    addedByParticipantId: p.addedByParticipantId === participantId ? null : p.addedByParticipantId,
+  }));
+}
+
 /* ------------------------------------------------------------------ *
  * API ของ store — ส่วนที่แอปทั้งหมดเห็น (signature คงเดิมจาก Phase 1)
  * ------------------------------------------------------------------ */
@@ -323,7 +482,13 @@ export async function getTrip(slug: string): Promise<Trip | null> {
   if (!slug) return null;
   const loaded = await loadTripBySlug(slug);
   if (loaded === null) return null;
-  return rowsToTrip(loaded.row, loaded.participantRows, groupAvailByParticipant(loaded.availRows));
+  return rowsToTrip(
+    loaded.row,
+    loaded.participantRows,
+    groupAvailByParticipant(loaded.availRows),
+    loaded.placeRows,
+    groupVotesByPlace(loaded.voteRows),
+  );
 }
 
 /** ประกอบ Trip เต็มจากแถว trips หลายแถวพร้อมกัน — ใช้ร่วมกันโดย listTrips/listTripsByOwner */
@@ -347,7 +512,30 @@ async function assembleTrips(tripRows: TripRow[]): Promise<Trip[]> {
     else participantsByTrip.set(p.tripId, [p]);
   }
 
-  return tripRows.map((t) => rowsToTrip(t, participantsByTrip.get(t.id) ?? [], availByParticipant));
+  const placeRows = await db.select().from(places).where(inArray(places.tripId, tripIds));
+  const placeIds = placeRows.map((p) => p.id);
+  const voteRows =
+    placeIds.length === 0
+      ? []
+      : await db.select().from(placeVotes).where(inArray(placeVotes.placeId, placeIds));
+  const votesByPlace = groupVotesByPlace(voteRows);
+
+  const placesByTrip = new Map<string, PlaceRow[]>();
+  for (const p of placeRows) {
+    const arr = placesByTrip.get(p.tripId);
+    if (arr) arr.push(p);
+    else placesByTrip.set(p.tripId, [p]);
+  }
+
+  return tripRows.map((t) =>
+    rowsToTrip(
+      t,
+      participantsByTrip.get(t.id) ?? [],
+      availByParticipant,
+      placesByTrip.get(t.id) ?? [],
+      votesByPlace,
+    ),
+  );
 }
 
 export async function listTrips(): Promise<Trip[]> {
@@ -384,7 +572,7 @@ export async function saveTrip(trip: Trip): Promise<void> {
     .values({ id: trip.id, slug: trip.slug, ownerId: trip.ownerId, createdAt: new Date(trip.createdAt), ...fields })
     .onConflictDoUpdate({ target: trips.id, set: fields });
 
-  await runBatch(buildParticipantWrites(trip.id, trip));
+  await runBatch([...buildParticipantWrites(trip.id, trip), ...buildPlaceWrites(trip.id, trip)]);
 }
 
 /**
@@ -421,9 +609,15 @@ export async function updateTrip(
     if (loaded === null) {
       throw new InputError("ไม่พบทริปนี้ — ลิงก์อาจผิดหรือทริปถูกลบไปแล้ว");
     }
-    const { row, participantRows, availRows } = loaded;
+    const { row, participantRows, availRows, placeRows, voteRows } = loaded;
 
-    const current = rowsToTrip(row, participantRows, groupAvailByParticipant(availRows));
+    const current = rowsToTrip(
+      row,
+      participantRows,
+      groupAvailByParticipant(availRows),
+      placeRows,
+      groupVotesByPlace(voteRows),
+    );
     const next = await mutate(current);
     const withSlug: Trip = { ...next, slug };
 
@@ -435,7 +629,7 @@ export async function updateTrip(
 
     if (cas.length === 0) continue; // แพ้ race — อ่านสด ๆ ใหม่แล้วลองทั้งรอบอีกครั้ง
 
-    await runBatch(buildParticipantWrites(row.id, withSlug));
+    await runBatch([...buildParticipantWrites(row.id, withSlug), ...buildPlaceWrites(row.id, withSlug)]);
     return withSlug;
   }
 
@@ -533,7 +727,7 @@ export async function createTrip(input: CreateTripInput): Promise<Trip> {
     await db.insert(participants).values(participantRows);
   }
 
-  return rowsToTrip(row, participantRows, new Map());
+  return rowsToTrip(row, participantRows, new Map(), [], new Map());
 }
 
 interface CleanTripInput {

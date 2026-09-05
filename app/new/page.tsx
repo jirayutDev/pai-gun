@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import CreateTripForm from "./create-trip-form";
 import Avatar from "@/components/ui/avatar";
+import { BackButton } from "@/components/ui/back-button";
 import { FloatingDots } from "@/components/ui/floating-dots";
 import { Pill } from "@/components/ui/pill";
 import { getSessionUser } from "@/lib/auth/session";
@@ -44,6 +45,7 @@ export default async function NewTripPage(): Promise<React.JSX.Element> {
     // ตอนเนื้อหายาวกว่าจอ (ขั้น 3 มีชื่อเพื่อนเยอะ) เลื่อนแล้วฉากบนจะ "ค้าง" ติดขอบบน
     // ส่วนชีตเลื่อนผ่านมันไปเหมือนบอตทอมชีตจริง ๆ
     <main className="mx-auto w-full max-w-[560px] pb-28 md:max-w-[680px]">
+      <BackButton className="-ml-3 mb-1" />
       {/* -mx ชดเชย padding ของ <main> ใน layout.tsx (px-4 md:px-8) ให้ฉากมืด
           เต็มขอบจอจริง ๆ เหมือนงานอ้างอิง ไม่ใช่แค่เต็มขอบคอลัมน์เนื้อหา
           sticky top-0 ต้องไม่มี ancestor ไหนใน chain นี้ตั้ง overflow: hidden/scroll

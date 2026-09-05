@@ -92,6 +92,7 @@ export default async function TripFillPage({
       submittedAt: p.submittedAt,
       days: p.days,
     })),
+    places: trip.places,
   };
 
   return <FillForm trip={safeTrip} initialMe={initialMe} />;

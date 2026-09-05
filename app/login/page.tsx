@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import AuthForm from "@/components/auth-form";
 import { getSessionUser, safeNextPath } from "@/lib/auth/session";
+import { BackButton } from "@/components/ui/back-button";
 
 export const metadata: Metadata = {
   title: "ล็อกอิน · PaiGun",
@@ -22,7 +23,8 @@ export default async function LoginPage({ searchParams }: PageProps) {
   if (user !== null) redirect(next);
 
   return (
-    <div className="max-w-[24rem] mx-auto pt-10 pb-10">
+    <div className="max-w-[24rem] mx-auto pt-4 pb-10">
+      <BackButton className="-ml-3 mb-4" />
       <h1 className="font-display font-bold text-[1.9rem] tracking-tight text-center mb-2">
         ล็อกอินเจ้าภาพ
       </h1>

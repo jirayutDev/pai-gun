@@ -81,6 +81,7 @@ function makeTrip(participants: Participant[], lengthDays = 3): Trip {
     lockedStart: null,
     allowSelfJoin: false,
     participants,
+    places: [],
     createdAt: SUBMITTED,
   };
 }

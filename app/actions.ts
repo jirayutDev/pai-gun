@@ -32,16 +32,23 @@ import {
   MAX_MEMBERS,
   MAX_NAME_LENGTH,
   MAX_NOTE_LENGTH,
+  MAX_PLACE_LOCATION_LENGTH,
+  MAX_PLACE_NAME_LENGTH,
+  MAX_PLACE_NOTE_LENGTH,
+  MAX_PLACE_PRICE_LENGTH,
+  MAX_PLACE_URL_LENGTH,
+  MAX_PLACES,
   MAX_RANGE_DAYS,
   MAX_TITLE_LENGTH,
   createTrip,
   findParticipantByToken,
   getTrip,
   nameKey,
+  stripParticipantFromPlaces,
   uniqueName,
   updateTrip,
 } from "@/lib/store";
-import type { AvailState, CreateTripInput, Participant, Rsvp, Trip } from "@/lib/types";
+import type { AvailState, CreateTripInput, Participant, Place, Rsvp, Trip } from "@/lib/types";
 
 /** ผลลัพธ์มาตรฐานของทุก action — discriminated union ให้ฟอร์มแยกกรณีได้ตรง ๆ */
 export type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -115,6 +122,29 @@ function replaceParticipant(trip: Trip, updated: Participant): Trip {
     ...trip,
     participants: trip.participants.map((p) => (p.id === updated.id ? updated : p)),
   };
+}
+
+/** ตัดช่องว่างหัวท้าย ว่าง = null, เกินยาวสูงสุดโยน InputError — ใช้กับฟิลด์ไม่บังคับของสถานที่ */
+function cleanOptionalText(raw: unknown, max: number, label: string): string | null {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (s === "") return null;
+  if (s.length > max) {
+    throw new InputError(`${label}ยาวเกิน ${max} ตัวอักษร — ย่อให้สั้นลง`);
+  }
+  return s;
+}
+
+/** เหมือน cleanOptionalText แต่เช็กเพิ่มว่าเป็น http(s) URL ที่ใช้งานได้จริง */
+function cleanOptionalUrl(raw: unknown): string | null {
+  const s = cleanOptionalText(raw, MAX_PLACE_URL_LENGTH, "ลิงก์");
+  if (s === null) return null;
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("not http(s)");
+  } catch {
+    throw new InputError("ลิงก์ไม่ถูกต้อง — ใส่ URL เต็ม เช่น https://...");
+  }
+  return s;
 }
 
 /* ------------------------------------------------------------------ *
@@ -612,6 +642,10 @@ export async function removeParticipantAction(
       return {
         ...trip,
         participants: trip.participants.filter((p) => p.id !== id),
+        // เอา id คนที่กำลังถูกลบออกจาก votes/addedByParticipantId ของทุกสถานที่ด้วย
+        // ไม่งั้น buildPlaceWrites จะพยายาม insert แถวที่อ้างถึง participants.id
+        // ที่เพิ่งถูกลบไปในคำสั่งก่อนหน้าของ batch เดียวกัน (ชน foreign key)
+        places: stripParticipantFromPlaces(trip.places, id),
       };
     });
 
@@ -656,6 +690,151 @@ export async function getParticipantLinkAction(
     return ok({ token: target.token });
   } catch (err) {
     return fail(toUserError(err, "หาลิงก์ส่วนตัวไม่สำเร็จเพราะระบบมีปัญหา — ลองอีกครั้ง"));
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * สถานที่ที่จะไป — เสนอ/โหวต/ลบ (คนละมิติกับวันว่าง)
+ * ------------------------------------------------------------------ */
+
+export interface PlaceInput {
+  name: string;
+  url: string;
+  location: string;
+  price: string;
+  note: string;
+}
+
+/**
+ * ผู้เข้าร่วมคนไหนก็เสนอสถานที่ได้ — ยืนยันตัวด้วย token เหมือนบันทึกวันว่าง
+ * ไม่เช็กสถานะโพล (ยกเว้นยกเลิกไปแล้ว) เพราะคุยเรื่องสถานที่ทำได้ตลอดอายุทริป
+ * ไม่ต้องรอให้ล็อกวันก่อน
+ */
+export async function addPlaceAction(
+  slug: string,
+  token: string,
+  input: PlaceInput,
+): Promise<ActionResult<{ placeId: string }>> {
+  try {
+    let newId = "";
+    await updateTrip(slug, async (trip) => {
+      const me = await requireParticipant(trip, token);
+
+      if (trip.status === "cancelled") {
+        throw new InputError("ทริปนี้ถูกยกเลิกไปแล้ว — เสนอสถานที่ไม่ได้");
+      }
+      if (trip.places.length >= MAX_PLACES) {
+        throw new InputError(`เสนอสถานที่ได้ไม่เกิน ${MAX_PLACES} ที่ต่อทริป`);
+      }
+
+      const name = cleanOptionalText(input?.name, MAX_PLACE_NAME_LENGTH, "ชื่อสถานที่");
+      if (name === null) {
+        throw new InputError("ใส่ชื่อสถานที่ก่อน");
+      }
+      const url = cleanOptionalUrl(input?.url);
+      const location = cleanOptionalText(input?.location, MAX_PLACE_LOCATION_LENGTH, "โลเคชั่น");
+      const price = cleanOptionalText(input?.price, MAX_PLACE_PRICE_LENGTH, "ราคา");
+      const note = cleanOptionalText(input?.note, MAX_PLACE_NOTE_LENGTH, "รายละเอียด");
+
+      const id = makeId();
+      newId = id;
+      const place: Place = {
+        id,
+        name,
+        url,
+        location,
+        price,
+        note,
+        addedByParticipantId: me.id,
+        addedByName: me.name,
+        votes: [],
+        createdAt: new Date().toISOString(),
+      };
+      return { ...trip, places: [...trip.places, place] };
+    });
+
+    revalidateTrip(slug);
+    return ok({ placeId: newId });
+  } catch (err) {
+    return fail(toUserError(err, "เพิ่มสถานที่ไม่สำเร็จเพราะระบบมีปัญหา — ลองอีกครั้ง"));
+  }
+}
+
+/**
+ * โหวต/ถอนโหวตสถานที่หนึ่ง — สลับสถานะ (toggle) ไม่ใช่ตั้งค่าตรง ๆ
+ * คนหนึ่งโหวตได้หลายที่พร้อมกัน (ไม่ใช่เลือกได้ที่เดียว) เพราะช่วงคุยกันเรื่อง
+ * สถานที่มักมีตัวเลือกที่ "ไปที่ไหนก็ได้ในนี้" มากกว่าต้องเลือกเดี่ยว ๆ
+ */
+export async function votePlaceAction(
+  slug: string,
+  token: string,
+  placeId: string,
+): Promise<ActionResult<{ voted: boolean }>> {
+  try {
+    let voted = false;
+    await updateTrip(slug, async (trip) => {
+      if (trip.status === "cancelled") {
+        throw new InputError("ทริปนี้ถูกยกเลิกไปแล้ว — โหวตไม่ได้");
+      }
+      const me = await requireParticipant(trip, token);
+
+      const id = typeof placeId === "string" ? placeId : "";
+      const target = trip.places.find((p) => p.id === id);
+      if (target === undefined) {
+        throw new InputError("ไม่พบสถานที่นี้ — อาจถูกลบไปแล้ว ลองรีเฟรชหน้า");
+      }
+
+      const already = target.votes.includes(me.id);
+      voted = !already;
+      const places = trip.places.map((p) =>
+        p.id !== id
+          ? p
+          : { ...p, votes: already ? p.votes.filter((v) => v !== me.id) : [...p.votes, me.id] },
+      );
+      return { ...trip, places };
+    });
+
+    revalidateTrip(slug);
+    return ok({ voted });
+  } catch (err) {
+    return fail(toUserError(err, "โหวตไม่สำเร็จเพราะระบบมีปัญหา — ลองอีกครั้ง"));
+  }
+}
+
+/**
+ * ลบสถานที่ออกจากลิสต์ — ทำได้แค่คนที่เพิ่ม (เทียบ token) หรือเจ้าภาพทริปเท่านั้น
+ * (ไม่ใช่ใครก็ลบของคนอื่นทิ้งได้)
+ */
+export async function removePlaceAction(
+  slug: string,
+  token: string,
+  placeId: string,
+): Promise<ActionResult<null>> {
+  try {
+    const user = await getSessionUser();
+    await updateTrip(slug, async (trip) => {
+      const isOwner = user !== null && trip.ownerId === user.id;
+
+      const id = typeof placeId === "string" ? placeId : "";
+      const target = trip.places.find((p) => p.id === id);
+      if (target === undefined) {
+        throw new InputError("ไม่พบสถานที่นี้ — อาจถูกลบไปแล้ว");
+      }
+
+      if (!isOwner) {
+        const me = await requireParticipant(trip, token);
+        if (target.addedByParticipantId !== me.id) {
+          throw new InputError("ลบได้เฉพาะคนที่เพิ่มสถานที่นี้ หรือเจ้าภาพทริปเท่านั้น");
+        }
+      }
+
+      return { ...trip, places: trip.places.filter((p) => p.id !== id) };
+    });
+
+    revalidateTrip(slug);
+    return ok(null);
+  } catch (err) {
+    return fail(toUserError(err, "ลบสถานที่ไม่สำเร็จเพราะระบบมีปัญหา — ลองอีกครั้ง"));
   }
 }
 

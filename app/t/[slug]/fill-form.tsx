@@ -29,13 +29,16 @@ import {
 } from "@/app/actions";
 import { formatRange, formatShort } from "@/lib/dates";
 import { MAX_COMMENT_LENGTH } from "@/lib/store";
-import type { AvailState, TripStatus } from "@/lib/types";
+import type { AvailState, Place, TripStatus } from "@/lib/types";
 import Avatar, { type AvatarKey } from "@/components/ui/avatar";
 import AvatarPicker from "@/components/ui/avatar-picker";
+import { BackButton } from "@/components/ui/back-button";
 import DayStatusCalendar from "@/components/ui/day-status-calendar";
 import { FloatingBar } from "@/components/ui/floating-bar";
 import { FloatingDots } from "@/components/ui/floating-dots";
 import { Pill } from "@/components/ui/pill";
+import { PlacesPanel } from "@/components/ui/places-panel";
+import { Tabs } from "@/components/ui/tabs";
 import { toastError } from "@/components/ui/swal";
 
 /* -------------------------------------------------------------------------- */
@@ -74,6 +77,7 @@ export interface PublicTrip {
   lockedStart: string | null;
   allowSelfJoin: boolean;
   participants: PublicParticipant[];
+  places: Place[];
 }
 
 /** ตัวตนของ "ฉัน" บนเครื่องนี้ — เก็บใน localStorage ต่อ slug */
@@ -220,6 +224,8 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
   const [typedName, setTypedName] = useState("");
   /** ดูปฏิทินรวมได้แม้ยังไม่เคลมตัวตน — ไม่ต้องรู้ว่าเป็นใครก็ดูได้ (ไม่ใช่ความลับ) */
   const [showCalendar, setShowCalendar] = useState(false);
+  /** แท็บ "วันว่าง" / "สถานที่" — แยกกันเพราะเป็นคนละมิติ หน้าเดียวยัดทั้งคู่แล้วยาวเกิน */
+  const [tab, setTab] = useState<"availability" | "places">("availability");
   const [pending, startTransition] = useTransition();
 
   const slug = trip.slug;
@@ -418,33 +424,36 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
   );
 
   const header = (
-    // ฉากมืดตายตัว (--ink-fixed) แบบงานอ้างอิง — bleed เต็มขอบกล่อง SHELL ด้วย -mx-4
-    // ที่หักลบ px-4 ของ SHELL เอง (ไม่ใช่ของ <main> ใน layout.tsx ชั้นนอก) จึงไม่ดันให้
-    // หน้ากว้างเกินและไม่เกิดสโครลแนวนอนใหม่
-    <header className="relative -mx-4 mb-4 overflow-hidden rounded-b-[2rem] bg-ink-fixed px-4 pt-7 pb-6">
-      <FloatingDots />
-      <h1 className="relative font-display font-bold text-[26px] md:text-[30px] text-on-ink-fixed">
-        {trip.title}
-      </h1>
-      <p className="relative pt-1 text-[15px] text-on-ink-fixed/75">
-        <span className="tnum">{formatRange(trip.rangeStart, trip.rangeEnd)}</span>
-        {" · ทริปยาว "}
-        <span className="tnum">{trip.lengthDays}</span>
-        {" วัน"}
-      </p>
-      {trip.note !== "" && (
-        <p className="relative pt-2 text-[14px] leading-relaxed text-on-ink-fixed/75">{trip.note}</p>
-      )}
-      <div className="relative flex flex-wrap gap-2 pt-3">
-        {/* "ตอบแล้ว" ไม่ใช่สถานะว่าง/ไม่ว่าง จึงใช้โทนกลาง ไม่ใช้มิ้นต์/เหลือง/คอรัล */}
-        <Pill tone="neutral">
-          ตอบแล้ว <span className="tnum font-semibold text-ink">{answeredCount}</span> จาก{" "}
-          <span className="tnum font-semibold text-ink">{trip.participants.length}</span> คน
-        </Pill>
-        {/* เตือนปิดรับ ไม่ใช่สถานะว่าง จึงใช้สีเน้นเดียวของแอป (brand) แทนเหลืองแดด */}
-        {deadline !== null && <Pill tone="brand">ปิดรับ {deadline}</Pill>}
-      </div>
-    </header>
+    <>
+      <BackButton className="-ml-3" />
+      {/* ฉากมืดตายตัว (--ink-fixed) แบบงานอ้างอิง — bleed เต็มขอบกล่อง SHELL ด้วย -mx-4
+          ที่หักลบ px-4 ของ SHELL เอง (ไม่ใช่ของ <main> ใน layout.tsx ชั้นนอก) จึงไม่ดันให้
+          หน้ากว้างเกินและไม่เกิดสโครลแนวนอนใหม่ */}
+      <header className="relative -mx-4 mb-4 overflow-hidden rounded-b-[2rem] bg-ink-fixed px-4 pt-7 pb-6">
+        <FloatingDots />
+        <h1 className="relative font-display font-bold text-[26px] md:text-[30px] text-on-ink-fixed">
+          {trip.title}
+        </h1>
+        <p className="relative pt-1 text-[15px] text-on-ink-fixed/75">
+          <span className="tnum">{formatRange(trip.rangeStart, trip.rangeEnd)}</span>
+          {" · ทริปยาว "}
+          <span className="tnum">{trip.lengthDays}</span>
+          {" วัน"}
+        </p>
+        {trip.note !== "" && (
+          <p className="relative pt-2 text-[14px] leading-relaxed text-on-ink-fixed/75">{trip.note}</p>
+        )}
+        <div className="relative flex flex-wrap gap-2 pt-3">
+          {/* "ตอบแล้ว" ไม่ใช่สถานะว่าง/ไม่ว่าง จึงใช้โทนกลาง ไม่ใช้มิ้นต์/เหลือง/คอรัล */}
+          <Pill tone="neutral">
+            ตอบแล้ว <span className="tnum font-semibold text-ink">{answeredCount}</span> จาก{" "}
+            <span className="tnum font-semibold text-ink">{trip.participants.length}</span> คน
+          </Pill>
+          {/* เตือนปิดรับ ไม่ใช่สถานะว่าง จึงใช้สีเน้นเดียวของแอป (brand) แทนเหลืองแดด */}
+          {deadline !== null && <Pill tone="brand">ปิดรับ {deadline}</Pill>}
+        </div>
+      </header>
+    </>
   );
 
   /* ------------------------------------------------------------------ */
@@ -667,143 +676,171 @@ export default function FillForm({ trip, initialMe = null }: FillFormProps): Rea
         </button>
       </div>
 
-      {!polling &&
-        (trip.status === "cancelled" ? (
-          <p className="rounded-[16px] bg-coral-fill px-4 py-3 text-[14px] text-coral-ink">
-            เจ้าภาพยกเลิกทริปนี้แล้ว — แก้วันว่างไม่ได้อีก
-          </p>
-        ) : (
-          <p className="rounded-[16px] bg-sun-fill px-4 py-3 text-[14px] text-sun-ink">
-            โพลปิดแล้ว — ดูได้แต่แก้ไม่ได้
-          </p>
-        ))}
+      <Tabs
+        items={[
+          { value: "availability", label: "วันว่าง" },
+          { value: "places", label: "สถานที่", badge: trip.places.length },
+        ]}
+        value={tab}
+        onChange={(v) => setTab(v as "availability" | "places")}
+        className="mb-4"
+      />
 
-      {/* บันทึกสำเร็จ → ยัดปุ่มดูผลโหวตให้เห็นทันที นี่คือรางวัลของการกรอกจบ */}
-      {justSaved && (
-        <div className="rounded-[16px] bg-mint-fill px-4 py-4">
-          <p className="font-display font-semibold text-[15px] text-mint-ink">
-            บันทึกแล้ว — เพื่อนเห็นคำตอบของคุณในผลโหวตทันที
-          </p>
-          <div className="pt-3">{resultLink}</div>
-        </div>
-      )}
-
-      <div className="pt-3">
-        <PaintCalendar
-          rangeStart={trip.rangeStart}
-          rangeEnd={trip.rangeEnd}
-          value={value}
-          onChange={setValue}
-          lengthDays={trip.lengthDays}
-          disabled={!polling}
-        />
-      </div>
-
-      {/* ความคิดเห็นสั้น ๆ คู่กับวันว่าง — บันทึกพร้อมกับปฏิทินตอนกดปุ่มเดียวกัน */}
-      <div className="pt-4">
-        <label htmlFor="comment" className="font-display font-semibold text-[0.9rem]">
-          ความคิดเห็น (ถ้ามี)
-        </label>
-        <textarea
-          id="comment"
-          value={comment}
-          onChange={(e) => setComment(e.target.value.slice(0, MAX_COMMENT_LENGTH))}
-          disabled={!polling}
-          rows={2}
-          maxLength={MAX_COMMENT_LENGTH}
-          placeholder="เช่น ว่างแค่เสาร์-อาทิตย์"
-          className="mt-2 w-full resize-none rounded-[16px] bg-fill px-4 py-3 text-[14px] text-ink placeholder:text-ink-3 disabled:opacity-50"
-        />
-      </div>
-
-      {/* ปฏิทินรวมของทุกคน — ก่อนหน้านี้เห็นได้แต่ในหน้าผลโหวตของเจ้าภาพเท่านั้น
-          คนที่มากรอกเองก็ควรเห็นได้ว่าคนอื่นเลือกวันไหนไปแล้วบ้างเหมือนกัน */}
-      <div className="pt-6">
-        <h2 className="font-display font-semibold text-[1rem] pb-1">ปฏิทินความว่างทั้งหมด</h2>
-        <p className="text-[0.78rem] text-ink-3 pb-3">
-          ตัวเลขในช่อง = ว่างกี่คนจากทั้งหมด · แตะช่องไหนดูรายชื่อของวันนั้น
-        </p>
-        <DayStatusCalendar
-          rangeStart={trip.rangeStart}
-          rangeEnd={trip.rangeEnd}
-          participants={trip.participants}
-        />
-      </div>
-
-      {!polling && <div className="pt-4 pb-10">{resultLink}</div>}
-
-      {polling && (
+      {tab === "availability" && (
         <>
-          {/* กันเนื้อหาถูกแคปซูลลอยด้านล่างบัง — แคปซูลเป็น fixed จึงไม่กินพื้นที่ในโฟลว์เอง */}
-          <div
-            className="pt-6"
-            style={{ paddingBottom: "calc(5.5rem + env(safe-area-inset-bottom))" }}
-          >
-            <p className="text-center text-[13px] text-ink-3">
-              {waiting.length > 0 ? (
-                <>
-                  ยังรออีก <span className="tnum">{waiting.length}</span> คน
-                </>
-              ) : (
-                "ทุกคนตอบครบแล้ว"
-              )}
-            </p>
-            {waiting.length > 0 && (
-              <ul className="flex flex-wrap justify-center gap-2 pt-3">
-                {waiting.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex min-h-[40px] items-center gap-1.5 rounded-full bg-fill py-1 pl-1 pr-3 text-[13px] text-ink-2"
-                  >
-                    <Avatar name={p.name} avatarKey={p.avatarKey} size={26} />
-                    {p.name}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          {!polling &&
+            (trip.status === "cancelled" ? (
+              <p className="rounded-[16px] bg-coral-fill px-4 py-3 text-[14px] text-coral-ink">
+                เจ้าภาพยกเลิกทริปนี้แล้ว — แก้วันว่างไม่ได้อีก
+              </p>
+            ) : (
+              <p className="rounded-[16px] bg-sun-fill px-4 py-3 text-[14px] text-sun-ink">
+                โพลปิดแล้ว — ดูได้แต่แก้ไม่ได้
+              </p>
+            ))}
 
-          {/* กล่อง error เต็มข้อความ — ลอยเหนือแคปซูลบันทึกเสมอ ไม่ว่าจะเลื่อนอยู่ตรงไหน
-              เพราะข้อความ error อาจยาวเกินจะยัดลงบรรทัดเดียวในแคปซูลดำ */}
-          {errorBox !== null && (
-            <div
-              className="fixed inset-x-0 z-40 flex justify-center px-4 pointer-events-none"
-              style={{ bottom: "calc(5.5rem + env(safe-area-inset-bottom))" }}
-            >
-              <div className="pointer-events-auto max-w-full rounded-[16px] shadow-lg shadow-black/20">
-                {errorBox}
-              </div>
+          {/* บันทึกสำเร็จ → ยัดปุ่มดูผลโหวตให้เห็นทันที นี่คือรางวัลของการกรอกจบ */}
+          {justSaved && (
+            <div className="rounded-[16px] bg-mint-fill px-4 py-4">
+              <p className="font-display font-semibold text-[15px] text-mint-ink">
+                บันทึกแล้ว — เพื่อนเห็นคำตอบของคุณในผลโหวตทันที
+              </p>
+              <div className="pt-3">{resultLink}</div>
             </div>
           )}
 
-          {/* แคปซูลดำลอย — ปุ่มบันทึกวันว่าง เอื้อมถึงได้ตลอดไม่ว่าจะเลื่อนปฏิทินไปไกลแค่ไหน */}
-          <FloatingBar>
-            <div className="min-w-0 flex-1 pl-3 pr-1">
-              <p
-                className={`truncate text-[12px] leading-tight ${
-                  filledCount === 0 || dirty ? "font-semibold text-on-ink-fixed" : "text-on-ink-fixed/60"
-                }`}
+          <div className="pt-3">
+            <PaintCalendar
+              rangeStart={trip.rangeStart}
+              rangeEnd={trip.rangeEnd}
+              value={value}
+              onChange={setValue}
+              lengthDays={trip.lengthDays}
+              disabled={!polling}
+            />
+          </div>
+
+          {/* ความคิดเห็นสั้น ๆ คู่กับวันว่าง — บันทึกพร้อมกับปฏิทินตอนกดปุ่มเดียวกัน */}
+          <div className="pt-4">
+            <label htmlFor="comment" className="font-display font-semibold text-[0.9rem]">
+              ความคิดเห็น (ถ้ามี)
+            </label>
+            <textarea
+              id="comment"
+              value={comment}
+              onChange={(e) => setComment(e.target.value.slice(0, MAX_COMMENT_LENGTH))}
+              disabled={!polling}
+              rows={2}
+              maxLength={MAX_COMMENT_LENGTH}
+              placeholder="เช่น ว่างแค่เสาร์-อาทิตย์"
+              className="mt-2 w-full resize-none rounded-[16px] bg-fill px-4 py-3 text-[14px] text-ink placeholder:text-ink-3 disabled:opacity-50"
+            />
+          </div>
+
+          {/* ปฏิทินรวมของทุกคน — ก่อนหน้านี้เห็นได้แต่ในหน้าผลโหวตของเจ้าภาพเท่านั้น
+              คนที่มากรอกเองก็ควรเห็นได้ว่าคนอื่นเลือกวันไหนไปแล้วบ้างเหมือนกัน */}
+          <div className="pt-6">
+            <h2 className="font-display font-semibold text-[1rem] pb-1">ปฏิทินความว่างทั้งหมด</h2>
+            <p className="text-[0.78rem] text-ink-3 pb-3">
+              ตัวเลขในช่อง = ว่างกี่คนจากทั้งหมด · แตะช่องไหนดูรายชื่อของวันนั้น
+            </p>
+            <DayStatusCalendar
+              rangeStart={trip.rangeStart}
+              rangeEnd={trip.rangeEnd}
+              participants={trip.participants}
+            />
+          </div>
+
+          {!polling && <div className="pt-4 pb-10">{resultLink}</div>}
+
+          {polling && (
+            <>
+              {/* กันเนื้อหาถูกแคปซูลลอยด้านล่างบัง — แคปซูลเป็น fixed จึงไม่กินพื้นที่ในโฟลว์เอง */}
+              <div
+                className="pt-6"
+                style={{ paddingBottom: "calc(5.5rem + env(safe-area-inset-bottom))" }}
               >
-                {filledCount === 0
-                  ? "เลือกวันว่างก่อนอย่างน้อย 1 วัน"
-                  : dirty
-                    ? "ยังไม่บันทึก"
-                    : "บันทึกไว้แล้ว"}
-              </p>
-              <p className="truncate text-[11px] leading-tight text-on-ink-fixed/50">
-                เลือกไว้ <span className="tnum font-semibold text-on-ink-fixed/80">{freeCount}</span> วัน
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={save}
-              disabled={pending || filledCount === 0}
-              className="min-h-[44px] md:min-h-[60px] shrink-0 whitespace-nowrap rounded-full bg-brand px-5 font-display font-semibold text-[15px] text-on-brand disabled:opacity-50"
-            >
-              {pending ? "กำลังบันทึก…" : "บันทึก"}
-            </button>
-          </FloatingBar>
+                <p className="text-center text-[13px] text-ink-3">
+                  {waiting.length > 0 ? (
+                    <>
+                      ยังรออีก <span className="tnum">{waiting.length}</span> คน
+                    </>
+                  ) : (
+                    "ทุกคนตอบครบแล้ว"
+                  )}
+                </p>
+                {waiting.length > 0 && (
+                  <ul className="flex flex-wrap justify-center gap-2 pt-3">
+                    {waiting.map((p) => (
+                      <li
+                        key={p.id}
+                        className="flex min-h-[40px] items-center gap-1.5 rounded-full bg-fill py-1 pl-1 pr-3 text-[13px] text-ink-2"
+                      >
+                        <Avatar name={p.name} avatarKey={p.avatarKey} size={26} />
+                        {p.name}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* กล่อง error เต็มข้อความ — ลอยเหนือแคปซูลบันทึกเสมอ ไม่ว่าจะเลื่อนอยู่ตรงไหน
+                  เพราะข้อความ error อาจยาวเกินจะยัดลงบรรทัดเดียวในแคปซูลดำ */}
+              {errorBox !== null && (
+                <div
+                  className="fixed inset-x-0 z-40 flex justify-center px-4 pointer-events-none"
+                  style={{ bottom: "calc(5.5rem + env(safe-area-inset-bottom))" }}
+                >
+                  <div className="pointer-events-auto max-w-full rounded-[16px] shadow-lg shadow-black/20">
+                    {errorBox}
+                  </div>
+                </div>
+              )}
+
+              {/* แคปซูลดำลอย — ปุ่มบันทึกวันว่าง เอื้อมถึงได้ตลอดไม่ว่าจะเลื่อนปฏิทินไปไกลแค่ไหน */}
+              <FloatingBar>
+                <div className="min-w-0 flex-1 pl-3 pr-1">
+                  <p
+                    className={`truncate text-[12px] leading-tight ${
+                      filledCount === 0 || dirty
+                        ? "font-semibold text-on-ink-fixed"
+                        : "text-on-ink-fixed/60"
+                    }`}
+                  >
+                    {filledCount === 0
+                      ? "เลือกวันว่างก่อนอย่างน้อย 1 วัน"
+                      : dirty
+                        ? "ยังไม่บันทึก"
+                        : "บันทึกไว้แล้ว"}
+                  </p>
+                  <p className="truncate text-[11px] leading-tight text-on-ink-fixed/50">
+                    เลือกไว้ <span className="tnum font-semibold text-on-ink-fixed/80">{freeCount}</span>{" "}
+                    วัน
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={save}
+                  disabled={pending || filledCount === 0}
+                  className="min-h-[44px] md:min-h-[60px] shrink-0 whitespace-nowrap rounded-full bg-brand px-5 font-display font-semibold text-[15px] text-on-brand disabled:opacity-50"
+                >
+                  {pending ? "กำลังบันทึก…" : "บันทึก"}
+                </button>
+              </FloatingBar>
+            </>
+          )}
         </>
+      )}
+
+      {tab === "places" && (
+        <div className="pb-10">
+          <PlacesPanel
+            slug={slug}
+            places={trip.places}
+            me={{ token: me.token, participantId: me.participantId }}
+            isOwner={false}
+          />
+        </div>
       )}
     </main>
   );

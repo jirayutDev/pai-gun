@@ -57,6 +57,7 @@ export default async function ResultPage({ params }: PageProps) {
       submittedAt: p.submittedAt,
       updatedAt: p.updatedAt,
     })),
+    places: trip.places,
   };
 
   // ประกอบ URL แชร์จาก header จริง เพื่อให้ก็อปไปวางในกลุ่มแล้วใช้ได้เลย

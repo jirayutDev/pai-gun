@@ -131,6 +131,51 @@ export const availability = pgTable(
 );
 
 /* ------------------------------------------------------------------ *
+ * สถานที่ที่จะไป — สมาชิกทุกคนเสนอและโหวตได้ อยู่คนละมิติกับวันว่างข้างบน
+ * ------------------------------------------------------------------ */
+
+export const places = pgTable(
+  "places",
+  {
+    id: uuid("id").primaryKey(),
+    tripId: uuid("trip_id")
+      .notNull()
+      .references(() => trips.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    url: text("url"),
+    location: text("location"),
+    price: text("price"),
+    note: text("note"),
+    /**
+     * set null (ไม่ cascade) ตอนคนเพิ่มถูกลบออกจากทริป — สถานที่ที่เสนอไว้ต้องอยู่ต่อ
+     * ชื่อจริงที่แสดงผลใช้ addedByName (snapshot ตอนเพิ่ม) เสมอ ไม่ join ย้อนกลับ
+     */
+    addedByParticipantId: uuid("added_by_participant_id").references(() => participants.id, {
+      onDelete: "set null",
+    }),
+    addedByName: text("added_by_name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("places_trip_id_idx").on(t.tripId)],
+);
+
+export const placeVotes = pgTable(
+  "place_votes",
+  {
+    placeId: uuid("place_id")
+      .notNull()
+      .references(() => places.id, { onDelete: "cascade" }),
+    participantId: uuid("participant_id")
+      .notNull()
+      .references(() => participants.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.placeId, t.participantId] }),
+    index("place_votes_participant_id_idx").on(t.participantId),
+  ],
+);
+
+/* ------------------------------------------------------------------ *
  * Crew — โครงเตรียมไว้ตาม lib/types.ts (Crew / CrewMember) ยังไม่มีหน้าจอ
  * ------------------------------------------------------------------ */
 

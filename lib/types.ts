@@ -58,6 +58,26 @@ export interface Participant {
   updatedAt: string;
 }
 
+/** สถานที่ที่สมาชิกคนหนึ่งเสนอ — อยู่คนละมิติกับวันว่าง ใครก็เสนอ/โหวตได้ */
+export interface Place {
+  id: string;
+  name: string;
+  /** ลิงก์ข้อมูล/จองที่พัก — null = ไม่ได้ใส่ */
+  url: string | null;
+  /** ชื่อสถานที่/ที่อยู่แบบข้อความ (ไม่ใช่พิกัด) — null = ไม่ได้ใส่ */
+  location: string | null;
+  /** ข้อความอิสระ เช่น "500-800/คน" — ไม่ใช่ตัวเลขล้วนเพราะราคามักเป็นช่วง */
+  price: string | null;
+  note: string | null;
+  /** null = คนที่เพิ่มถูกลบออกจากทริปไปแล้ว — ยังแสดงชื่อได้จาก addedByName */
+  addedByParticipantId: string | null;
+  /** ชื่อคนที่เพิ่ม ณ ตอนเพิ่ม (snapshot) — อยู่ต่อได้แม้คนนั้นถูกลบออกจากทริปทีหลัง */
+  addedByName: string;
+  /** participantId ของคนที่โหวตให้สถานที่นี้ */
+  votes: string[];
+  createdAt: string;
+}
+
 /** บัญชีเจ้าภาพ — ต้องล็อกอินก่อนถึงสร้าง/ยกเลิก/แก้ทริปได้ */
 export interface User {
   id: string;
@@ -86,6 +106,8 @@ export interface Trip {
   /** เปิดให้คนเพิ่มชื่อตัวเองจากลิงก์ได้ */
   allowSelfJoin: boolean;
   participants: Participant[];
+  /** สถานที่ที่สมาชิกเสนอ+โหวต — อยู่คนละมิติกับ participants[].days */
+  places: Place[];
   createdAt: string;
 }
 

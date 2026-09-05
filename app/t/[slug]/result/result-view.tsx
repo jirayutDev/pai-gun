@@ -12,9 +12,12 @@ import { formatDowRange, formatRange, isISODate } from "@/lib/dates";
 import { rankWindows } from "@/lib/schedule";
 import type { Participant, Trip, TripWindow } from "@/lib/types";
 import Avatar from "@/components/ui/avatar";
+import { BackButton } from "@/components/ui/back-button";
 import DatePicker from "@/components/ui/date-picker";
 import DayStatusCalendar from "@/components/ui/day-status-calendar";
 import { Pill } from "@/components/ui/pill";
+import { PlacesPanel } from "@/components/ui/places-panel";
+import { Tabs } from "@/components/ui/tabs";
 import { FloatingDots } from "@/components/ui/floating-dots";
 import { confirmDialog, toastError, toastSuccess } from "@/components/ui/swal";
 
@@ -172,9 +175,10 @@ function offLine(w: TripWindow): string {
 export default function ResultView({ trip, isOwner, shareUrl }: ResultViewProps) {
   const [length, setLength] = useState(trip.lengthDays);
   const [pending, startTransition] = useTransition();
+  /** แท็บ "ผลโหวต" / "สถานที่" / "ตั้งค่า" (เจ้าภาพเท่านั้น) — แยกเพราะหน้าเดียวยาวเกิน */
+  const [tab, setTab] = useState<"results" | "places" | "settings">("results");
 
   // ── แก้ไขข้อมูลพื้นฐานของทริป (เจ้าภาพ, เฉพาะตอนโพลยังเปิดอยู่) ──────────
-  const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(trip.title);
   const [editNote, setEditNote] = useState(trip.note);
   const [editRangeStart, setEditRangeStart] = useState(trip.rangeStart);
@@ -243,38 +247,54 @@ export default function ResultView({ trip, isOwner, shareUrl }: ResultViewProps)
         return;
       }
       toastSuccess("บันทึกแล้ว");
-      setEditing(false);
     });
   }
 
   return (
     <div className="max-w-[32rem] md:max-w-[36rem] mx-auto">
+      <BackButton className="-ml-3 mb-1" />
+
       {/* ---------- หัวหน้า ---------- */}
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[0.8rem] text-ink-3">
-            {formatRange(trip.rangeStart, trip.rangeEnd)} · ตอบแล้ว {rank.answered} จาก{" "}
-            {rank.invited} คน
-          </p>
-          <h1 className="font-display font-bold text-[1.9rem] tracking-[-0.03em] mt-1">
-            {trip.title}
-          </h1>
-          {trip.note ? <p className="text-[0.88rem] text-ink-2 mt-1">{trip.note}</p> : null}
-        </div>
-        {canHostAct && trip.status === "polling" ? (
-          <button
-            type="button"
-            onClick={() => setEditing((v) => !v)}
-            className="shrink-0 min-h-[40px] px-4 rounded-full bg-fill text-ink-2 font-display font-semibold text-[0.82rem]"
-          >
-            {editing ? "ปิดฟอร์ม" : "แก้ไขทริป"}
-          </button>
-        ) : null}
+      <header>
+        <p className="text-[0.8rem] text-ink-3">
+          {formatRange(trip.rangeStart, trip.rangeEnd)} · ตอบแล้ว {rank.answered} จาก{" "}
+          {rank.invited} คน
+        </p>
+        <h1 className="font-display font-bold text-[1.9rem] tracking-[-0.03em] mt-1">
+          {trip.title}
+        </h1>
+        {trip.note ? <p className="text-[0.88rem] text-ink-2 mt-1">{trip.note}</p> : null}
       </header>
 
-      {/* ---------- ฟอร์มแก้ไขข้อมูลพื้นฐาน (เจ้าภาพ, เฉพาะตอนโพลยังเปิดอยู่) ---------- */}
-      {editing && canHostAct && trip.status === "polling" ? (
-        <div className="bg-surface border border-line rounded-[20px] p-4 mt-4 grid gap-3">
+      {isCancelled ? (
+        <div className="bg-coral-fill text-coral-ink rounded-[20px] px-4 py-3 mt-4 text-[0.9rem]">
+          <strong className="font-display font-semibold">ทริปนี้ถูกยกเลิกแล้ว</strong> —
+          เจ้าภาพยกเลิกไป แก้วันว่างหรือล็อกวันต่อไม่ได้อีก
+        </div>
+      ) : isLocked && trip.lockedStart ? (
+        <div className="bg-mint-fill text-mint-ink rounded-[20px] px-4 py-3 mt-4 text-[0.9rem]">
+          <strong className="font-display font-semibold">ล็อกวันแล้ว</strong> —{" "}
+          {formatRange(trip.lockedStart, trip.lockedStart)} เป็นต้นไป รวม {trip.lengthDays} วัน
+          · โพลปิดแล้ว แก้วันว่างไม่ได้อีก
+        </div>
+      ) : null}
+
+      <Tabs
+        items={[
+          { value: "results", label: "ผลโหวต" },
+          { value: "places", label: "สถานที่", badge: trip.places.length },
+          ...(isOwner ? [{ value: "settings", label: "ตั้งค่า" }] : []),
+        ]}
+        value={tab}
+        onChange={(v) => setTab(v as "results" | "places" | "settings")}
+        className="mt-4 mb-4"
+      />
+
+      {tab === "settings" && isOwner ? (
+        <div className="grid gap-4">
+          {/* ---------- ฟอร์มแก้ไขข้อมูลพื้นฐาน (เฉพาะตอนโพลยังเปิดอยู่) ---------- */}
+          {trip.status === "polling" ? (
+        <div className="bg-surface border border-line rounded-[20px] p-4 grid gap-3">
           <div>
             <label htmlFor="edit-title" className="block pb-1 text-[12px] text-ink-3">
               ชื่อทริป
@@ -383,21 +403,32 @@ export default function ResultView({ trip, isOwner, shareUrl }: ResultViewProps)
             {pending ? "กำลังบันทึก…" : "บันทึกการแก้ไข"}
           </button>
         </div>
+          ) : (
+            <p className="text-[0.85rem] text-ink-2">
+              แก้ไขข้อมูลพื้นฐานได้เฉพาะตอนโพลยังเปิดอยู่ — ถ้าล็อกวันไปแล้วอยากเปลี่ยน ให้ยกเลิกทริปนี้แล้วตั้งใหม่
+            </p>
+          )}
+
+          {/* ---------- ยกเลิกทริป ---------- */}
+          {canHostAct ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={onCancel}
+              className="inline-flex items-center justify-center w-full min-h-[44px] md:min-h-[60px] rounded-full bg-coral-fill text-coral-ink font-display font-semibold text-[0.88rem] disabled:opacity-60"
+            >
+              ยกเลิกทริปนี้
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
-      {isCancelled ? (
-        <div className="bg-coral-fill text-coral-ink rounded-[20px] px-4 py-3 mt-4 text-[0.9rem]">
-          <strong className="font-display font-semibold">ทริปนี้ถูกยกเลิกแล้ว</strong> —
-          เจ้าภาพยกเลิกไป แก้วันว่างหรือล็อกวันต่อไม่ได้อีก
-        </div>
-      ) : isLocked && trip.lockedStart ? (
-        <div className="bg-mint-fill text-mint-ink rounded-[20px] px-4 py-3 mt-4 text-[0.9rem]">
-          <strong className="font-display font-semibold">ล็อกวันแล้ว</strong> —{" "}
-          {formatRange(trip.lockedStart, trip.lockedStart)} เป็นต้นไป รวม {trip.lengthDays} วัน
-          · โพลปิดแล้ว แก้วันว่างไม่ได้อีก
-        </div>
+      {tab === "places" ? (
+        <PlacesPanel slug={trip.slug} places={trip.places} me={null} isOwner={isOwner} />
       ) : null}
 
+      {tab === "results" && (
+        <>
       {/* ---------- ลิงก์แชร์ ---------- */}
       <div className="bg-surface border border-line rounded-[20px] p-4 mt-4">
         <p className="text-[0.8rem] text-ink-3 mb-2">แปะลิงก์นี้ในกลุ่ม LINE</p>
@@ -638,18 +669,8 @@ export default function ResultView({ trip, isOwner, shareUrl }: ResultViewProps)
       >
         {isLocked ? "ดูวันว่างที่กรอกไว้" : "ไปกรอก / แก้วันว่างของฉัน"}
       </Link>
-
-      {/* ---------- ยกเลิกทริป (เจ้าภาพเท่านั้น) ---------- */}
-      {canHostAct ? (
-        <button
-          type="button"
-          disabled={pending}
-          onClick={onCancel}
-          className="mt-3 inline-flex items-center justify-center w-full min-h-[44px] md:min-h-[60px] rounded-full bg-coral-fill text-coral-ink font-display font-semibold text-[0.88rem] disabled:opacity-60"
-        >
-          ยกเลิกทริปนี้
-        </button>
-      ) : null}
+        </>
+      )}
     </div>
   );
 }
