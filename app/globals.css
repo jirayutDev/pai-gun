@@ -1,0 +1,285 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   PaiGun — design tokens
+   วัยรุ่น มินิมอล มีสีสัน · มือถือและไอแพดมาก่อน · dark-first
+
+   กฎ: ม่วงสดเป็นสีเน้นเพียงสีเดียว
+       เขียวมิ้นต์/เหลืองแดด/แดงคอรัล สงวนไว้บอกสถานะว่างเท่านั้น (ว่าง / ว่างถ้าจำเป็น / ไม่ว่าง)
+       ฟ้า/พีช/ลาเวนเดอร์/เหลืองมะนาว เป็นพาสเทลตกแต่งพื้นการ์ดเท่านั้น สลับใช้กันได้
+       ห้ามเปลี่ยนความหมายสีสถานะ และห้ามเอาพาสเทลตกแต่งไปสื่อสถานะแทนมิ้นต์/เหลือง/คอรัล
+
+   ทำไมเป็น dark-first: ช่องปฏิทินที่เลือกแล้วระบายเต็มช่องด้วยมิ้นต์/เหลือง/คอรัล
+   สีพวกนี้เด้งชัดบนพื้นดำมากกว่าพื้นขาว ทำให้อ่านกลางแดดง่ายขึ้น ไม่ใช่แค่เรื่องสวย
+
+   กลไก: ค่าเริ่มต้นบน `:root` (ไม่มีเงื่อนไข) คือชุดมืด — ใครไม่ได้ตั้งค่าอะไรเลยเห็นมืด
+   ชุดสว่างมาจากสองทาง: (1) เครื่องตั้ง OS เป็นสว่าง (`prefers-color-scheme: light`)
+   หรือ (2) ผู้ใช้กดสลับธีมเองในแอป (`data-theme="light"` บน html) — ถ้าอยากบังคับมืด
+   ทั้งที่ระบบเป็นสว่าง ใช้ `data-theme="dark"` ทับได้เหมือนกัน (กลไกเดิมที่มีอยู่แล้ว
+   แค่สลับว่าชุดไหนเป็นค่าเริ่มต้น)
+   ========================================================================== */
+
+:root {
+  --paper: #120e24;
+  --surface: #1c1638;
+  --fill: #251e48;
+  --fill-2: #312856;
+
+  --ink: #f3efff;
+  --ink-2: #a79fd1;
+  --ink-3: #7b72a8;
+  --line: #312856;
+
+  --brand: #9e7dff;
+  --brand-ink: #bca6ff;
+  --brand-fill: #2a2058;
+  --on-brand: #14102b;
+
+  --sky: #4fcdf5;
+  --sky-ink: #7edcf8;
+  --sky-fill: #13303d;
+
+  --mint: #2ddba0;
+  --mint-ink: #5ce8b8;
+  --mint-fill: #0f3a2a;
+
+  --sun: #ffc24d;
+  --sun-ink: #ffd27a;
+  --sun-fill: #3a2c0f;
+
+  --coral: #ff7391;
+  --coral-ink: #ff9bae;
+  --coral-fill: #3d1826;
+
+  --peach-fill: #3a2618;
+  --lavender-fill: #352a5c;
+  --lemon-fill: #3d3910;
+
+  /**
+   * เกือบดำเสมอ ไม่สลับตามธีม — ใช้กับ "แคปซูลดำลอย" (นำทาง/ปุ่มบันทึกที่ sticky)
+   * ซึ่งในงานอ้างอิงเป็นองค์ประกอบตายตัว ไม่ใช่พื้นผิวที่ควรกลับสีตามโหมดสว่าง/มืด
+   * ประกาศนอกบล็อกที่ถูกทับด้วย prefers-color-scheme/data-theme โดยตั้งใจ
+   */
+  --ink-fixed: #14102b;
+  --on-ink-fixed: #f3efff;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --paper: #faf8ff;
+    --surface: #ffffff;
+    --fill: #f2eeff;
+    --fill-2: #e5deff;
+
+    --ink: #1b1340;
+    --ink-2: #655c8c;
+    --ink-3: #9a92bd;
+    --line: #eae4fb;
+
+    --brand: #6d48ff;
+    --brand-ink: #5836d6;
+    --brand-fill: #ede6ff;
+    --on-brand: #ffffff;
+
+    --sky: #12b5e5;
+    --sky-ink: #0a87ad;
+    --sky-fill: #d8f4fd;
+
+    --mint: #00b87c;
+    --mint-ink: #00875c;
+    --mint-fill: #d2f6e8;
+
+    --sun: #f5a100;
+    --sun-ink: #b07000;
+    --sun-fill: #fff0d2;
+
+    --coral: #ff4d6d;
+    --coral-ink: #d62f4f;
+    --coral-fill: #ffe1e8;
+
+    --peach-fill: #ffebda;
+    --lavender-fill: #eee5ff;
+    --lemon-fill: #fff9d6;
+  }
+}
+
+:root[data-theme="light"] {
+  --paper: #faf8ff;
+  --surface: #ffffff;
+  --fill: #f2eeff;
+  --fill-2: #e5deff;
+
+  --ink: #1b1340;
+  --ink-2: #655c8c;
+  --ink-3: #9a92bd;
+  --line: #eae4fb;
+
+  --brand: #6d48ff;
+  --brand-ink: #5836d6;
+  --brand-fill: #ede6ff;
+  --on-brand: #ffffff;
+
+  --sky: #12b5e5;
+  --sky-ink: #0a87ad;
+  --sky-fill: #d8f4fd;
+
+  --mint: #00b87c;
+  --mint-ink: #00875c;
+  --mint-fill: #d2f6e8;
+
+  --sun: #f5a100;
+  --sun-ink: #b07000;
+  --sun-fill: #fff0d2;
+
+  --coral: #ff4d6d;
+  --coral-ink: #d62f4f;
+  --coral-fill: #ffe1e8;
+
+  --peach-fill: #ffebda;
+  --lavender-fill: #eee5ff;
+  --lemon-fill: #fff9d6;
+}
+
+/* เปิดให้ Tailwind ใช้ token ข้างบนเป็น utility ได้ เช่น bg-paper text-ink-2 */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-fill: var(--fill);
+  --color-fill-2: var(--fill-2);
+
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-fill: var(--brand-fill);
+  --color-on-brand: var(--on-brand);
+
+  --color-sky: var(--sky);
+  --color-sky-ink: var(--sky-ink);
+  --color-sky-fill: var(--sky-fill);
+
+  --color-mint: var(--mint);
+  --color-mint-ink: var(--mint-ink);
+  --color-mint-fill: var(--mint-fill);
+
+  --color-sun: var(--sun);
+  --color-sun-ink: var(--sun-ink);
+  --color-sun-fill: var(--sun-fill);
+
+  --color-coral: var(--coral);
+  --color-coral-ink: var(--coral-ink);
+  --color-coral-fill: var(--coral-fill);
+
+  --color-peach-fill: var(--peach-fill);
+  --color-lavender-fill: var(--lavender-fill);
+  --color-lemon-fill: var(--lemon-fill);
+
+  --color-ink-fixed: var(--ink-fixed);
+  --color-on-ink-fixed: var(--on-ink-fixed);
+
+  /* ฟอนต์โหลดด้วย <link> ใน app/layout.tsx — ดูเหตุผลในคอมเมนต์ที่นั้น
+     ทุก family มี fallback ของระบบต่อท้าย เผื่อโหลดไม่ทันหรือโหลดไม่ได้ */
+  --font-display: "Anuphan", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans Thai", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+
+  /* มุมโค้งใช้ค่าตรง rounded-[10px] / [16px] / [24px] / [34px] / rounded-full */
+}
+
+/* --------------------------------------------------------------------------
+   base
+   -------------------------------------------------------------------------- */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/**
+ * color-scheme บอกเบราว์เซอร์ให้ทาสี "chrome" ของ control ดั้งเดิม (ปฏิทินของ
+ * input type=date, ช่อง number, สกรอลบาร์ ฯลฯ) ให้เข้ากับธีม — ถ้าปล่อยเป็น
+ * `light dark` เฉย ๆ เบราว์เซอร์จะตัดสินใจเองจาก prefers-color-scheme ของ OS
+ * ซึ่ง "ไม่ตรง" กับกฎของเราที่ค่าเริ่มต้นเป็นมืดเสมอ (ไม่ใช่แค่ตาม OS) — คนที่ OS
+ * ไม่ได้ตั้งค่า light/dark ไว้ชัดเจนจะได้แอปพื้นมืดแต่ปฏิทินของ input date เป็น
+ * กล่องขาวโพลนสิ่งไม่เข้ากัน จึงต้องประกาศ color-scheme เอง คู่กับเงื่อนไขเดียวกับ
+ * โทเคนสีด้านบนเป๊ะ ๆ (ดูคอมเมนต์หัวไฟล์)
+ */
+html {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme="dark"]) {
+    color-scheme: light;
+  }
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  line-height: 1.72;
+  -webkit-font-smoothing: antialiased;
+  /* กันหน้าเด้งซ้ายขวาบนมือถือ */
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  line-height: 1.18;
+  text-wrap: balance;
+  letter-spacing: -0.028em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* ตัวเลขเรียงคอลัมน์ให้ตรงกัน ใช้กับตารางและคะแนน */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* จุดคอนเฟตตีลอย (components/ui/floating-dots.tsx) — CSS ล้วน ไม่มีไลบรารีแอนิเมชัน
+   ถูก prefers-reduced-motion ด้านบนบังคับ animation-duration: 0.01ms ให้อยู่แล้ว */
+@keyframes pg-float {
+  0%,
+  100% {
+    transform: translateY(0) translateX(0);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translateY(-14px) translateX(6px);
+    opacity: 1;
+  }
+}
+
+.pg-float {
+  animation-name: pg-float;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
